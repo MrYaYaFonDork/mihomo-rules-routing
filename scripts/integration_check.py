@@ -138,7 +138,9 @@ def main():
     else:
         fd = os.open("/proc/self/ns/net", os.O_RDONLY)
         try:
-            subprocess.run(["unshare", "-rn", sys.executable, str(Path(__file__).resolve()),
+            # Root (sudo on CI) needs no user namespace; one would hide unmapped file owners.
+            flag = "-n" if os.geteuid() == 0 else "-rn"
+            subprocess.run(["unshare", flag, sys.executable, str(Path(__file__).resolve()),
                             "--inside", "--namespace-fd", str(fd), "--output", str(output),
                             "--mihomo", str(mihomo), "--work-dir", str(work),
                             "--timeout", str(args.timeout)],

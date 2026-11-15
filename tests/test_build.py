@@ -181,6 +181,20 @@ class ConversionTests(unittest.TestCase):
                 os.close(current)
                 os.close(regular)
 
+    def test_root_uses_network_namespace_without_user_namespace(self):
+        # Under sudo a new user namespace would hide unmapped file owners (CI checkout in /home/runner).
+        from scripts.integration_check import main
+        with tempfile.TemporaryDirectory(dir="/tmp/opencode/mihomo-rules-routing/task1") as tmp:
+            args = ["integration_check.py", "--output", tmp, "--mihomo", tmp, "--work-dir", tmp]
+            for euid, flag in ((0, "-n"), (1000, "-rn")):
+                with self.subTest(euid=euid), patch("sys.argv", args), \
+                        patch("scripts.integration_check.verify_sha256"), \
+                        patch("scripts.integration_check.os.geteuid", return_value=euid), \
+                        patch("scripts.integration_check.subprocess.run") as run:
+                    main()
+                    self.assertEqual(run.call_args.args[0][:2], ["unshare", flag])
+                    self.assertIn("--namespace-fd", run.call_args.args[0])
+
     def test_checksum_rejects_modified_archive(self):
         with tempfile.TemporaryDirectory(dir="/tmp/opencode/mihomo-rules-routing/task1") as tmp:
             path = Path(tmp) / "archive"
