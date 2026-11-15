@@ -74,6 +74,101 @@ OR-смысл и порядок; Microsoft и torrents — DIRECT, blocked@ru в
 расположен выше существующих UDP443/ads и может обходить их; новые защитные
 REJECT стоят выше torrent. Это не kill switch.
 
+## Как подключить GeoSite/GeoIP/ACL в Mihomo
+
+Сборка выдаёт четыре вида файлов: `rules/*.mrs` (бинарные domain/ipcidr),
+`rules/*.yaml` (classical, если в наборе есть keyword/regex или смешанные
+условия), `rule-providers.yaml` (готовый блок `rule-providers:` для всех 46
+наборов) и `manifest.json` (соответствие исходного SRS Karing → ID provider,
+behavior, format, число правил, SHA-256).
+
+Шаг 1. Найдите ID нужного набора в `manifest.json` (поле `providers`).
+Не угадывайте ID: он получается из пути источника, например
+`geo/geosite/youtube.srs` → `geo-geosite-youtube-srs`,
+`geo/geoip/blocked@ru.srs` → `geo-geoip-blocked-ru-srs`,
+`ACL4SSR/Claude.srs` → `acl4ssr-claude-srs`.
+
+Шаг 2. Скопируйте определение из `rule-providers.yaml` в раздел
+`rule-providers:` своего конфига без изменений `behavior` и `format`.
+MRS бывает только `domain` или `ipcidr`; classical — только `format: yaml`.
+
+```yaml
+rule-providers:
+  geo-geosite-youtube-srs:          # GeoSite → domain + MRS
+    type: http
+    behavior: domain
+    format: mrs
+    path: ./rules/geo-geosite-youtube-srs.mrs
+    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/rules/geo-geosite-youtube-srs.mrs
+    interval: 86400
+  geo-geoip-telegram-srs:           # GeoIP → ipcidr + MRS
+    type: http
+    behavior: ipcidr
+    format: mrs
+    path: ./rules/geo-geoip-telegram-srs.mrs
+    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/rules/geo-geoip-telegram-srs.mrs
+    interval: 86400
+  geo-geosite-google-srs:           # набор с regex → classical YAML
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/geo-geosite-google-srs.yaml
+    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/rules/geo-geosite-google-srs.yaml
+    interval: 86400
+```
+
+Шаг 3. Сошлитесь на provider в `rules:` через `RULE-SET,<ID>,<политика>`.
+Политика — существующая группа (`🌍 Прокси`, `⚡ Авто`) или `DIRECT`/`REJECT`.
+Mihomo применяет первое совпавшее правило, поэтому блокировки ставьте выше
+разрешающих, точные исключения — выше широких наборов, `MATCH` — последним:
+
+```yaml
+rules:
+  - RULE-SET,acl4ssr-banad-srs,REJECT
+  - RULE-SET,geo-geosite-youtube-srs,🌍 Прокси
+  - RULE-SET,geo-geoip-telegram-srs,🌍 Прокси
+  - RULE-SET,geo-geosite-google-srs,🌍 Прокси
+  - MATCH,🌍 Прокси
+```
+
+Для `ipcidr` можно добавить `,no-resolve` (`RULE-SET,geo-geoip-telegram-srs,🌍 Прокси,no-resolve`):
+тогда правило не вызывает DNS-резолв домена, но проверяет уже известный IP.
+Не добавляйте его везде механически — иначе запросы по домену могут пройти мимо
+IP-набора.
+
+Особенности:
+
+- URL работают только после публикации ветки `rules` в **открытом**
+  репозитории. Из приватного репозитория клиент raw-файлы не скачает.
+- Для локальной проверки без сети укажите `type: file` и `path` к файлу из `output/rules/`.
+- В шаблоне Remnawave сохраните строку `proxies: # LEAVE THIS LINE!`. Готовое
+  слияние со всеми 46 наборами делает `scripts/merge_profile.py` (см. выше).
+- Это **не** встроенные `GEOSITE,…`/`GEOIP,…` Mihomo: те читают `geosite.dat`/
+  `geoip.dat` (`geox-url`) из других баз. `GEOSITE,youtube` и
+  `RULE-SET,geo-geosite-youtube-srs` могут различаться по содержимому.
+- После изменения конфига проверьте `mihomo -t -d <каталог> -f config.yaml` и
+  убедитесь, что у каждого provider ненулевой `ruleCount` (`GET /providers/rules`
+  контроллера). Ошибочные classical-строки Mihomo пропускает с предупреждением.
+
+### Добавить новый набор Karing в сборку
+
+Сейчас список закреплён ровно на 46 источниках, и это число проверяется в
+нескольких местах. Чтобы добавить, например, `geo/geosite/spotify.srs`, нужно:
+
+1. Проверить, что файл есть в ветке `sing` KaringX/karing-ruleset на
+   выбранном commit, и проверить его лицензию/происхождение (`THIRD_PARTY.md`).
+2. Добавить путь в `config/sets.json`.
+3. Назначить маршрут в `scripts/merge_profile.py`: добавить набор в один из
+   списков `REJECT`/`DIRECT`/`AUTOMATIC`/`PROXIED` и в `GROUPS` на нужное место
+   (порядок в `GROUPS` определяет порядок правил).
+4. Заменить число 46 в `scripts/ci.py`, `scripts/integration_check.py`,
+   `scripts/merge_profile.py` и в тестах (`tests/test_profile.py`).
+5. Пересобрать, выполнить тесты, `integration_check.py` и merger. Неизвестные
+   поля sing-box остановят сборку — это ожидаемо, не обходите это.
+
+Готовые чужие наборы Mihomo (MRS/YAML с другим URL) можно подключить напрямую
+шагами 2–3, не меняя сборку.
+
 ## Обновления и права
 
 Workflow рассчитан на ежедневный и ручной запуск; actions закреплены SHA,
