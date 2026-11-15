@@ -1,7 +1,7 @@
 # Источники и права
 
 Выбранные SRS берутся из [KaringX/karing-ruleset, ветка sing](https://github.com/KaringX/karing-ruleset/tree/sing).
-Состав upstream можно изучить в [workflow проекта](https://github.com/KaringX/karing-ruleset/tree/main/.github/workflows).
+Состав upstream можно изучить в [workflow проекта](https://github.com/KaringX/karing-ruleset/blob/workflow/.github/workflows/run.yml).
 Для ветки sing не установлена единая лицензия, покрывающая все данные.
 
 - [ACL4SSR — LICENCE](https://github.com/ACL4SSR/ACL4SSR/blob/master/LICENCE):
