@@ -1,176 +1,96 @@
-# Karing → Mihomo: наборы правил
+# Библиотека правил Karing для Mihomo
 
-Локальная сборка 46 выбранных SRS Karing в rule-provider Mihomo (MRS или
-classical YAML) с публикацией готовых ссылок. Список источников —
-`config/sets.json`; текущий снимок дал 35 MRS и 11 classical YAML. Репозиторий
-содержит только пересобранные списки, ссылки на них, конвертер, проверки, CI и
-документацию по подключению; профили и шаблоны клиентов здесь не хранятся. Это
-не универсальный переводчик sing-box: неизвестные или неподдержанные условия
-останавливают сборку.
+Библиотека содержит отдельные rule-provider-файлы Mihomo, построенные из одного
+закреплённого снимка SRS проекта [Karing](https://github.com/KaringX/karing-ruleset).
+Пути и регистр имён сохраняются: например, `geo/geosite/youtube.srs` становится
+`mihomo/geosite/youtube.mrs`. GeoIP располагается в `mihomo/geoip/`, ACL4SSR —
+в `mihomo/acl/`, остальные каталоги сохраняют свои пространства имён.
 
-`output/` — локальный, исключённый из Git результат. Публичные raw URL пока не
-опубликованы и будут недоступны до открытия репозитория и отдельной публикации.
-Не помещайте личные профили, домены, подписки или токены в репозиторий.
+Чистые domain и ipcidr наборы выпускаются как MRS; смешанные и classical
+правила — как YAML. `rule-providers.yaml` содержит готовые определения,
+`manifest.json` — источники, поведение, хеши, число правил и исключения.
+Неподдерживаемые источники исключаются только по точным записям в
+`config/exclusions.json`; новый неподдерживаемый источник или изменившийся
+закреплённый blob останавливает сборку до пересмотра политики. Прежнее
+обследование дало 4942 provider и 65 исключений; это не подтверждение текущей
+полной сборки, фактические значения смотрите в её manifest.
 
-## Локально: Linux amd64
+Для MRS builder может использовать `native_mrs` только после проверки
+эквивалентности с преобразованным SRS; иначе применяется `converted_srs` с
+причиной fallback. Native revisions и происхождение фиксируются в manifest.
 
-Нужны Python 3, `unshare` и `ip`; версии и SHA-256 официальных sing-box и
-Mihomo закреплены в `config/tools.json`. Все временные файлы и venv ниже — в RAM
-при условии, что `/tmp` смонтирован как tmpfs. Если это не так, используйте
-другой tmpfs и учтите фиксированный путь в тестах.
+## Использование
+
+После публикации ветки `rules` в доступном репозитории скопируйте определение
+нужного provider из `rule-providers.yaml`. Например, замените `OWNER/REPO` на
+путь своего репозитория:
+
+```yaml
+rule-providers:
+  mihomo/geosite/youtube:
+    type: http
+    behavior: domain
+    format: mrs
+    path: ./mihomo/geosite/youtube.mrs
+    url: https://raw.githubusercontent.com/OWNER/REPO/rules/mihomo/geosite/youtube.mrs
+    interval: 86400
+```
+
+Чтобы применить этот provider, добавьте правило:
+
+```yaml
+rules:
+  - RULE-SET,mihomo/geosite/youtube,PROXY
+```
+
+Замените `PROXY` на нужную политику или группу своего конфига.
+
+Для символов в имени URL кодируется: `@` → `%40`, `!` → `%21`, `+` → `%2B`;
+имя provider и локальный путь сохраняют исходные символы. Проверьте формат и
+behavior конкретного файла в manifest, а после подключения — загрузку provider
+и его ненулевой `ruleCount` в Mihomo.
+
+## Сборка и проверка
+
+Для Linux нужны Python, `unshare`, `ip` и закреплённые инструменты из
+`config/tools.json`. Создайте RAM-каталог и укажите существующие SHA снимков:
 
 ```sh
-mkdir -p /tmp/opencode/mihomo-rules-routing/task1
 export TMPDIR=/tmp/opencode/mihomo-rules-routing
+mkdir -p "$TMPDIR"
 python3 -m venv "$TMPDIR/venv"
-"$TMPDIR/venv/bin/pip" install --no-cache-dir -r requirements.txt
-"$TMPDIR/venv/bin/python" -m unittest discover -s tests -v
+"$TMPDIR/venv/bin/pip" install -r requirements.txt
+"$TMPDIR/venv/bin/python" -m unittest discover -s tests
 "$TMPDIR/venv/bin/python" scripts/fetch_tools.py --destination "$TMPDIR/tools"
 ```
 
-Выберите проверенный 40-символьный commit ветки `sing` Karing и установите его
-в переменную `COMMIT`. Укажите реальный будущий публичный base URL, например
-`https://example.test/rules`, вместо placeholder; он записывается в providers.
-Для сборки из одного commit без локальных источников:
+Создайте `$TMPDIR/native-snapshots.json` с настоящими 40-символьными SHA:
+
+```json
+{"MetaCubeX/meta-rules-dat":"META_COMMIT_SHA","runetfreedom/russia-blocked-geoip":"RF_COMMIT_SHA"}
+```
+
+Замените `KARING_COMMIT_SHA` и URL на актуальные значения:
 
 ```sh
-COMMIT=0123456789abcdef0123456789abcdef01234567
-"$TMPDIR/venv/bin/python" scripts/build.py --commit "$COMMIT" \
-  --base-url https://example.test/rules --output "$TMPDIR/product" \
-  --work-dir "$TMPDIR/work" --sing-box "$TMPDIR/tools/sing-box" \
-  --mihomo "$TMPDIR/tools/mihomo"
+"$TMPDIR/venv/bin/python" scripts/build.py --full \
+  --commit KARING_COMMIT_SHA --native-snapshots "$TMPDIR/native-snapshots.json" \
+  --base-url https://raw.githubusercontent.com/OWNER/REPO/rules \
+  --output "$TMPDIR/product" --work-dir "$TMPDIR/work" \
+  --sing-box "$TMPDIR/tools/sing-box" --mihomo "$TMPDIR/tools/mihomo"
 "$TMPDIR/venv/bin/python" scripts/integration_check.py --output "$TMPDIR/product" \
   --work-dir "$TMPDIR/work" --mihomo "$TMPDIR/tools/mihomo"
 ```
 
-Commit выше — только пример, замените его существующим. Сборка без `--source-dir`
-скачивает все файлы по HTTPS из указанного commit, отмечая origin как
-`authenticated_download`; это не проверка криптографической подписи commit.
-С `--source-dir` используется локальный снимок, origin будет `local/unverified`:
-само значение `--commit` не доказывает происхождение файлов. При ошибке сборки
-предыдущий output сохраняется. Offline integration требует работающего отдельного
-network namespace; при отказе системы проверка не считается пройденной.
-Неотмеченный CI-отпечатком локальный authenticated output можно дополнительно
-проверить командой `"$TMPDIR/venv/bin/python" scripts/ci.py validate --unstamped --output "$TMPDIR/product"`;
-проверка публикации отдельно требует fingerprint и ожидаемый upstream commit.
-
-## Как подключить GeoSite/GeoIP/ACL в Mihomo
-
-Сборка выдаёт четыре вида файлов: `rules/*.mrs` (бинарные domain/ipcidr),
-`rules/*.yaml` (classical, если в наборе есть keyword/regex или смешанные
-условия), `rule-providers.yaml` (готовый блок `rule-providers:` для всех 46
-наборов) и `manifest.json` (соответствие исходного SRS Karing → ID provider,
-behavior, format, число правил, SHA-256).
-
-Шаг 1. Найдите ID нужного набора в `manifest.json` (поле `providers`).
-Не угадывайте ID: он получается из пути источника, например
-`geo/geosite/youtube.srs` → `geo-geosite-youtube-srs`,
-`geo/geoip/blocked@ru.srs` → `geo-geoip-blocked-ru-srs`,
-`ACL4SSR/Claude.srs` → `acl4ssr-claude-srs`.
-
-Шаг 2. Скопируйте определение из `rule-providers.yaml` в раздел
-`rule-providers:` своего конфига без изменений `behavior` и `format`.
-MRS бывает только `domain` или `ipcidr`; classical — только `format: yaml`.
-`<owner>/<repo>` — замените на свой репозиторий, где опубликована ветка `rules`.
-
-```yaml
-rule-providers:
-  geo-geosite-youtube-srs:          # GeoSite → domain + MRS
-    type: http
-    behavior: domain
-    format: mrs
-    path: ./rules/geo-geosite-youtube-srs.mrs
-    url: https://raw.githubusercontent.com/<owner>/<repo>/rules/rules/geo-geosite-youtube-srs.mrs
-    interval: 86400
-  geo-geoip-telegram-srs:           # GeoIP → ipcidr + MRS
-    type: http
-    behavior: ipcidr
-    format: mrs
-    path: ./rules/geo-geoip-telegram-srs.mrs
-    url: https://raw.githubusercontent.com/<owner>/<repo>/rules/rules/geo-geoip-telegram-srs.mrs
-    interval: 86400
-  geo-geosite-google-srs:           # набор с regex → classical YAML
-    type: http
-    behavior: classical
-    format: yaml
-    path: ./rules/geo-geosite-google-srs.yaml
-    url: https://raw.githubusercontent.com/<owner>/<repo>/rules/rules/geo-geosite-google-srs.yaml
-    interval: 86400
-```
-
-При необходимости в provider можно добавить поле `proxy: <имя группы>`: тогда
-набор скачивается/обновляется через эту группу или прокси (поле описано в
-[документации Mihomo](https://wiki.metacubex.one/en/config/rule-providers/)).
-
-Шаг 3. Сошлитесь на provider в `rules:` через `RULE-SET,<ID>,<политика>`.
-Политика — существующая группа вашего конфига (в примерах `PROXY`) или `DIRECT`/`REJECT`.
-Mihomo применяет первое совпавшее правило, поэтому блокировки ставьте выше
-разрешающих, точные исключения — выше широких наборов, `MATCH` — последним:
-
-```yaml
-rules:
-  - RULE-SET,acl4ssr-banad-srs,REJECT
-  - RULE-SET,geo-geosite-youtube-srs,PROXY
-  - RULE-SET,geo-geoip-telegram-srs,PROXY
-  - RULE-SET,geo-geosite-google-srs,PROXY
-  - MATCH,PROXY
-```
-
-Для `ipcidr` можно добавить `,no-resolve` (`RULE-SET,geo-geoip-telegram-srs,PROXY,no-resolve`):
-тогда правило не вызывает DNS-резолв домена, но проверяет уже известный IP.
-Не добавляйте его везде механически — иначе запросы по домену могут пройти мимо
-IP-набора.
-
-Особенности:
-
-- URL работают только после публикации ветки `rules` в **открытом**
-  репозитории. Из приватного репозитория клиент raw-файлы не скачает.
-- Для локальной проверки без сети укажите `type: file` и `path` к файлу из `output/rules/`.
-- Это **не** встроенные `GEOSITE,…`/`GEOIP,…` Mihomo: те читают `geosite.dat`/
-  `geoip.dat` (`geox-url`) из других баз. `GEOSITE,youtube` и
-  `RULE-SET,geo-geosite-youtube-srs` могут различаться по содержимому.
-- После изменения конфига проверьте `mihomo -t -d <каталог> -f config.yaml` и
-  убедитесь, что у каждого provider ненулевой `ruleCount` (`GET /providers/rules`
-  контроллера). Ошибочные classical-строки Mihomo пропускает с предупреждением.
-
-### Добавить новый набор Karing в сборку
-
-Сейчас список закреплён ровно на 46 источниках, и это число проверяется в
-скриптах. Чтобы добавить, например, `geo/geosite/spotify.srs`, нужно:
-
-1. Проверить, что файл есть в ветке `sing` KaringX/karing-ruleset на
-   выбранном commit, и проверить его лицензию/происхождение (`THIRD_PARTY.md`).
-2. Добавить путь в `config/sets.json`.
-3. Заменить число 46 в `scripts/ci.py` и `scripts/integration_check.py`.
-4. Пересобрать, выполнить тесты и `integration_check.py`. Неизвестные
-   поля sing-box остановят сборку — это ожидаемо, не обходите это.
-
-Готовые чужие наборы Mihomo (MRS/YAML с другим URL) можно подключить напрямую
-шагами 2–3, не меняя сборку.
+`--output` для полной сборки должен быть новым путём. Проверка запускает Mihomo
+в отдельном network namespace и проверяет все providers порциями; при
+недоступности изоляции она завершается ошибкой.
 
 ## Обновления и права
 
-Workflow рассчитан на ежедневный и ручной запуск; actions закреплены SHA,
-инструменты — версиями и хешами. Сборка read-only, право записи выделено
-отдельной публикации. При неизменном fingerprint лишний commit не создаётся.
-По умолчанию license/provenance gate закрыт **и для upload-artifact, и для push**.
-Переменная `LICENSING_PROVENANCE_APPROVED` не устанавливается проектом; её
-возможное включение требует отдельного решения о правах. Личное некоммерческое
-использование само по себе не разрешает публичную перепубликацию объединённых
-наборов; подробности — `THIRD_PARTY.md`. Build в Actions уже проходил успешно; upload и публикация пропускаются, пока
-gate закрыт.
-
-Providers могут обновляться независимо; чтение нескольких стабильных URL не
-транзакционно. Локально можно вернуть проверенный сохранённый снимок; удалённый
-откат допустим только после отдельного разрешения обычным новым commit известного
-снимка, без force push и переписывания истории.
-
-## Проверка на клиенте
-
-Импорт конфигурации не означает работающую маршрутизацию. После подключения
-наборов выполните `mihomo -t`, убедитесь, что все providers загрузились с
-ненулевым `ruleCount`, и проверьте нужные домены/IP на своём клиенте. Правила
-по приложениям и работа TUN/DNS зависят от клиента и платформы.
-
-**About:** Проверенная локальная сборка выбранных правил Karing для Mihomo с
-закрытой по умолчанию публикацией.
+Workflow запускается ежедневно и вручную. Загрузка артефакта и публикация
+разрешены только при `LICENSING_PROVENANCE_APPROVED=true`; настройка переменной
+сама по себе не подтверждает upstream-права. Ветка `rules` содержит один
+orphan-снимок: для возврата к прежним данным требуется пересобрать и проверить
+известные revisions. Проверьте происхождение и права перед распространением;
+подробности — в [THIRD_PARTY.md](THIRD_PARTY.md).

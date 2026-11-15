@@ -36,21 +36,35 @@ def providers_ready(providers, expected):
     return True
 
 
-def run_inside(output, mihomo, work_dir, timeout):
-    subprocess.run(["ip", "link", "set", "lo", "up"], check=True, timeout=10)
-    manifest = json.loads((output / "manifest.json").read_text())
-    sources = manifest["sources"]
-    if len(sources) != 46:
-        raise ValueError("expected 46 sources")
+def manifest_providers(output, manifest):
     expected, providers = {}, {}
-    for source in sources:
+    for source in manifest["sources"]:
+        if "reason" in source:
+            continue
         for name in source["providers"]:
             behavior, fmt = source["behavior"], source["format"]
-            path = output / "rules" / (name + "." + fmt)
+            path = output / source.get("output", "rules/" + name + "." + fmt)
+            if name in providers:
+                raise ValueError("duplicate provider")
             expected[name] = (behavior, source["count"])
             providers[name] = {"type": "file", "behavior": behavior, "format": fmt, "path": str(path)}
-    if len(providers) != 46:
-        raise ValueError("expected 46 unique providers")
+    if not providers:
+        raise ValueError("no providers")
+    return expected, providers
+
+
+def run_inside(output, mihomo, work_dir, timeout):
+    subprocess.run(["ip", "link", "set", "lo", "up"], check=True, timeout=10)
+    expected, providers = manifest_providers(output, json.loads((output / "manifest.json").read_text()))
+    names = list(providers)
+    for start in range(0, len(names), 200):
+        batch = names[start:start + 200]
+        run_batch(mihomo, work_dir, timeout, {n: expected[n] for n in batch},
+                  {n: providers[n] for n in batch})
+    print(f"validated {len(expected)} providers; classical counts match; no parser warnings")
+
+
+def run_batch(mihomo, work_dir, timeout, expected, providers):
     def port():
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
@@ -60,9 +74,9 @@ def run_inside(output, mihomo, work_dir, timeout):
         mixed = port()
     with tempfile.TemporaryDirectory(dir=work_dir, prefix="integration-") as tmp:
         tmp = Path(tmp)
-        for name, provider in providers.items():
+        for index, (name, provider) in enumerate(providers.items()):
             source = Path(provider["path"])
-            target = tmp / source.name
+            target = tmp / (str(index) + source.suffix)
             shutil.copyfile(source, target)
             provider["path"] = str(target)
         config = ("bind-address: 127.0.0.1\nmixed-port: " + str(mixed) +
@@ -105,7 +119,6 @@ def run_inside(output, mihomo, work_dir, timeout):
                     proc.kill()
                     proc.wait(timeout=5)
                 check_log(log_path)
-    print(f"validated {len(expected)} providers; classical counts match; no parser warnings")
 
 
 def main():
@@ -144,7 +157,7 @@ def main():
                             "--inside", "--namespace-fd", str(fd), "--output", str(output),
                             "--mihomo", str(mihomo), "--work-dir", str(work),
                             "--timeout", str(args.timeout)],
-                           check=True, timeout=2 * args.timeout + 30, pass_fds=(fd,))
+                           check=True, pass_fds=(fd,))
         finally:
             os.close(fd)
 

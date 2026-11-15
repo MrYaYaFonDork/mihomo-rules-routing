@@ -77,7 +77,7 @@ class ConversionTests(unittest.TestCase):
             convert_rule({"domain": ".example.com"})
 
     def test_untrusted_binary_not_executed(self):
-        with tempfile.TemporaryDirectory(dir="/tmp/opencode/mihomo-rules-routing/task1") as tmp:
+        with tempfile.TemporaryDirectory(prefix="build-test-") as tmp:
             root = Path(tmp)
             marker = root / "marker"
             tool = root / "evil"
@@ -88,7 +88,7 @@ class ConversionTests(unittest.TestCase):
             self.assertFalse(marker.exists())
 
     def test_build_empty_rule_and_provenance_and_cleanup(self):
-        with tempfile.TemporaryDirectory(dir="/tmp/opencode/mihomo-rules-routing/task1") as tmp:
+        with tempfile.TemporaryDirectory(prefix="build-test-") as tmp:
             root = Path(tmp)
             (root / "config").mkdir()
             (root / "config/sets.json").write_text('["source.srs"]')
@@ -150,9 +150,42 @@ class ConversionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             providers_ready({"a": {"ruleCount": 1}, "b": {"ruleCount": 1}}, expected)
 
+    def test_integration_full_manifest_uses_nested_output_and_skips_exclusions(self):
+        from scripts.integration_check import manifest_providers
+        manifest = {"sources": [
+            {"source": "geo/geosite/A+!.srs", "providers": ["mihomo/geosite/A+!"],
+             "output": "mihomo/geosite/A+!.mrs", "behavior": "domain", "format": "mrs", "count": 2},
+            {"source": "bad.srs", "reason": "invalid domain"}]}
+        expected, providers = manifest_providers(Path("/output"), manifest)
+        self.assertEqual(expected, {"mihomo/geosite/A+!": ("domain", 2)})
+        self.assertEqual(providers["mihomo/geosite/A+!"]["path"], "/output/mihomo/geosite/A+!.mrs")
+
+    def test_integration_batches_all_providers_once_and_stops_on_failure(self):
+        from scripts.integration_check import run_inside
+        with tempfile.TemporaryDirectory(prefix="build-test-") as tmp:
+            root = Path(tmp)
+            for count in (201, 401):
+                sources = [{"providers": [f"p{i}"], "behavior": "domain", "format": "mrs",
+                            "count": 1, "output": f"mihomo/p{i}.mrs"} for i in range(count)]
+                (root / "manifest.json").write_text(json.dumps({"sources": sources}))
+                with self.subTest(count=count), patch("scripts.integration_check.subprocess.run"), \
+                        patch("scripts.integration_check.run_batch") as batch:
+                    run_inside(root, root / "mihomo", root, 10)
+                    groups = [list(call.args[3]) for call in batch.call_args_list]
+                    self.assertEqual([len(group) for group in groups], [200] * (count // 200) + [count % 200])
+                    self.assertEqual([name for group in groups for name in group],
+                                     [f"p{i}" for i in range(count)])
+                    for call in batch.call_args_list:
+                        self.assertEqual(set(call.args[3]), set(call.args[4]))
+                with patch("scripts.integration_check.subprocess.run"), \
+                        patch("scripts.integration_check.run_batch", side_effect=[None, RuntimeError("batch failed")]) as batch:
+                    with self.assertRaisesRegex(RuntimeError, "batch failed"):
+                        run_inside(root, root / "mihomo", root, 10)
+                    self.assertEqual(batch.call_count, 2)
+
     def test_integration_rejects_classical_parser_warning(self):
         from scripts.integration_check import check_log
-        with tempfile.TemporaryDirectory(dir="/tmp/opencode/mihomo-rules-routing/task1") as tmp:
+        with tempfile.TemporaryDirectory(prefix="build-test-") as tmp:
             log = Path(tmp) / "log"
             log.write_text("WARN parse classical rule [bad] error\n")
             with self.assertRaises(ValueError):
@@ -160,7 +193,7 @@ class ConversionTests(unittest.TestCase):
 
     def test_inside_refuses_invalid_or_same_namespace_before_any_subprocess(self):
         from scripts.integration_check import main
-        with tempfile.TemporaryDirectory(dir="/tmp/opencode/mihomo-rules-routing/task1") as tmp:
+        with tempfile.TemporaryDirectory(prefix="build-test-") as tmp:
             current = os.open("/proc/self/ns/net", os.O_RDONLY)
             regular = os.open("/dev/null", os.O_RDONLY)
             try:
@@ -184,7 +217,7 @@ class ConversionTests(unittest.TestCase):
     def test_root_uses_network_namespace_without_user_namespace(self):
         # Under sudo a new user namespace would hide unmapped file owners (CI checkout in /home/runner).
         from scripts.integration_check import main
-        with tempfile.TemporaryDirectory(dir="/tmp/opencode/mihomo-rules-routing/task1") as tmp:
+        with tempfile.TemporaryDirectory(prefix="build-test-") as tmp:
             args = ["integration_check.py", "--output", tmp, "--mihomo", tmp, "--work-dir", tmp]
             for euid, flag in ((0, "-n"), (1000, "-rn")):
                 with self.subTest(euid=euid), patch("sys.argv", args), \
@@ -196,7 +229,7 @@ class ConversionTests(unittest.TestCase):
                     self.assertIn("--namespace-fd", run.call_args.args[0])
 
     def test_checksum_rejects_modified_archive(self):
-        with tempfile.TemporaryDirectory(dir="/tmp/opencode/mihomo-rules-routing/task1") as tmp:
+        with tempfile.TemporaryDirectory(prefix="build-test-") as tmp:
             path = Path(tmp) / "archive"
             path.write_bytes(b"data")
             verify_sha256(path, hashlib.sha256(b"data").hexdigest())
@@ -205,7 +238,7 @@ class ConversionTests(unittest.TestCase):
 
     def test_fetch_rejects_bad_unpacked_hash_before_replacement(self):
         from scripts.fetch_tools import fetch_tools
-        with tempfile.TemporaryDirectory(dir="/tmp/opencode/mihomo-rules-routing/task1") as tmp:
+        with tempfile.TemporaryDirectory(prefix="build-test-") as tmp:
             root = Path(tmp)
             (root / "config").mkdir()
             archive = gzip.compress(b"new-binary", mtime=0)
@@ -223,7 +256,7 @@ class ConversionTests(unittest.TestCase):
             self.assertEqual((out / "mihomo").read_bytes(), b"old-binary")
 
     def test_failed_build_preserves_previous_output(self):
-        with tempfile.TemporaryDirectory(dir="/tmp/opencode/mihomo-rules-routing/task1") as tmp:
+        with tempfile.TemporaryDirectory(prefix="build-test-") as tmp:
             root = Path(tmp)
             output = root / "out"
             output.mkdir()
