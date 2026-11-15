@@ -1,0 +1,8 @@
+/.github-deploy-key
+/.github-deploy-key.pub
+/output/
+/.github-known-hosts
+__pycache__/
+*.py[cod]
+/.venv/
+/private*

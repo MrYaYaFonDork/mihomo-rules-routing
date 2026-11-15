@@ -1,0 +1,92 @@
+name: Build rules
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: rules-publication
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.prepare.outputs.changed }}
+      commit: ${{ steps.prepare.outputs.commit }}
+      fingerprint: ${{ steps.prepare.outputs.fingerprint }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.13'
+      - name: Prepare RAM
+        run: |
+          sudo mkdir -p /tmp/opencode/mihomo-rules-routing
+          sudo mount -t tmpfs -o size=2G tmpfs /tmp/opencode/mihomo-rules-routing
+          sudo chown "$USER" /tmp/opencode/mihomo-rules-routing
+          mkdir -p /tmp/opencode/mihomo-rules-routing/task1
+      - name: Install dependency and test
+        env:
+          TMPDIR: /tmp/opencode/mihomo-rules-routing
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -m pip install --no-cache-dir -r requirements.txt
+          python -m unittest discover -s tests -v
+      - name: Resolve revision and compare fingerprint
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TMPDIR: /tmp/opencode/mihomo-rules-routing
+        run: python scripts/ci.py prepare
+      - name: Build and validate offline
+        if: steps.prepare.outputs.changed == 'true'
+        env:
+          COMMIT: ${{ steps.prepare.outputs.commit }}
+          BASE_URL: ${{ steps.prepare.outputs.base_url }}
+          FINGERPRINT: ${{ steps.prepare.outputs.fingerprint }}
+          TMPDIR: /tmp/opencode/mihomo-rules-routing
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python scripts/fetch_tools.py --destination "$TMPDIR/tools"
+          python scripts/build.py --commit "$COMMIT" --base-url "$BASE_URL" --output "$TMPDIR/product" --work-dir "$TMPDIR/work" --sing-box "$TMPDIR/tools/sing-box" --mihomo "$TMPDIR/tools/mihomo"
+          sudo "$(command -v python)" scripts/integration_check.py --output "$TMPDIR/product" --work-dir "$TMPDIR/work" --mihomo "$TMPDIR/tools/mihomo"
+          python scripts/ci.py stamp --output "$TMPDIR/product"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: steps.prepare.outputs.changed == 'true' && vars.LICENSING_PROVENANCE_APPROVED == 'true'
+        with:
+          name: validated-rules
+          path: |
+            /tmp/opencode/mihomo-rules-routing/product/rules/*
+            /tmp/opencode/mihomo-rules-routing/product/rule-providers.yaml
+            /tmp/opencode/mihomo-rules-routing/product/manifest.json
+          if-no-files-found: error
+          retention-days: 1
+  publish:
+    needs: build
+    if: needs.build.outputs.changed == 'true' && vars.LICENSING_PROVENANCE_APPROVED == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --no-cache-dir -r requirements.txt
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: validated-rules
+          path: /dev/shm/validated-rules
+          digest-mismatch: error
+      - name: Validate and publish one ordinary commit
+        env:
+          EXPECTED_COMMIT: ${{ needs.build.outputs.commit }}
+          EXPECTED_FINGERPRINT: ${{ needs.build.outputs.fingerprint }}
+        run: python scripts/ci.py publish --output /dev/shm/validated-rules --commit "$EXPECTED_COMMIT" --fingerprint "$EXPECTED_FINGERPRINT"
