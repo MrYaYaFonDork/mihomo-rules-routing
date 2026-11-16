@@ -19,7 +19,7 @@ def product(root, name):
     root.mkdir()
     files = {"mihomo/geosite/" + name + ".mrs": b"binary",
              "rule-providers.yaml": b"providers", "README.md": b"readme",
-             "THIRD_PARTY.md": b"licenses"}
+             "THIRD_PARTY.md": b"licenses", "GUIDE.md": b"guide"}
     for path, content in files.items():
         file = root / path
         file.parent.mkdir(parents=True, exist_ok=True)

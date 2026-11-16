@@ -45,7 +45,7 @@ def full_fingerprint(commit, native_snapshots, base_url):
         raise ValueError("invalid fingerprint inputs")
     paths = ("config/tools.json", "config/exclusions.json", "scripts/catalog.py", "scripts/build.py",
              "scripts/native.py", "scripts/ci.py", "scripts/fetch_tools.py", "scripts/integration_check.py",
-             "scripts/publish.py", ".github/workflows/build.yml", "README.md", "THIRD_PARTY.md")
+             "scripts/publish.py", ".github/workflows/build.yml", "README.md", "THIRD_PARTY.md", "GUIDE.md")
     fields = [b"full", commit.encode(), base_url.encode()]
     for repo, sha in sorted(native_snapshots.items()):
         fields.extend((repo.encode(), sha.encode()))
@@ -246,7 +246,10 @@ def validate_full(root, manifest, unstamped, expected_commit, expected_fingerpri
     if exclusions != manifest["excluded"]:
         raise ValueError("invalid exclusions")
     outputs = manifest["outputs"]
-    if not isinstance(outputs, dict) or set(outputs) != {s["output"] for s in mapping.values()} | {"rule-providers.yaml", "README.md", "THIRD_PARTY.md"}:
+    expected_outputs = {s["output"] for s in mapping.values()} | {"rule-providers.yaml", "README.md", "THIRD_PARTY.md"}
+    if not historical or (isinstance(outputs, dict) and "GUIDE.md" in outputs):
+        expected_outputs.add("GUIDE.md")
+    if not isinstance(outputs, dict) or set(outputs) != expected_outputs:
         raise ValueError("invalid outputs")
     for source in mapping.values():
         if source["method"] == "native_mrs" and source["native"]["input_sha256"] != outputs[source["output"]]:
@@ -401,11 +404,13 @@ def prepare(repo, token, scratch):
                     seen.add(name)
             if seen != set(files):
                 raise ValueError("archive missing files")
-            previous = validate(root, historical=True)
+            unstamped = "ci_fingerprint" not in json.loads((root / "manifest.json").read_text())
+            previous = validate(root, historical=True, unstamped=unstamped)
     return {"commit": commit, "base_url": base, "fingerprint": value,
             "native_snapshots": json.dumps(snapshots, sort_keys=True, separators=(",", ":")),
             "changed": previous is None or "excluded" not in previous
-                       or previous["ci_fingerprint"] != value or previous["upstream_commit"] != commit
+                       or "ci_fingerprint" not in previous or previous["ci_fingerprint"] != value
+                       or previous["upstream_commit"] != commit
                        or previous["native_snapshots"] != snapshots}
 
 

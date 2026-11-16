@@ -178,6 +178,34 @@ class CiTests(unittest.TestCase):
                     patch.object(ci, "validate", wraps=ci.validate) as validate:
                 self.assertFalse(ci.prepare("owner/repo", "token", root)["changed"])
                 self.assertTrue(validate.call_args.kwargs["historical"])
+                unsigned = dict(manifest)
+                unsigned.pop("ci_fingerprint")
+                files["manifest.json"] = json.dumps(unsigned).encode()
+                entries[:] = [{"path": p, "type": "blob", "mode": "100644", "size": len(data),
+                               "sha": hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()}
+                              for p, data in files.items()]
+                commit, tree = anchored_tree(entries, "e"*40)
+                tree["sha"] = commit["tree"]["sha"]
+                self.assertTrue(ci.prepare("owner/repo", "token", root)["changed"])
+                self.assertTrue(validate.call_args.kwargs["unstamped"])
+                mode["value"] = "historical-hash"
+                with self.assertRaisesRegex(ValueError, "output hash"):
+                    ci.prepare("owner/repo", "token", root)
+                mode["value"] = "good"
+                files["manifest.json"] = json.dumps({**unsigned, "ci_fingerprint": "invalid"}).encode()
+                entries[:] = [{"path": p, "type": "blob", "mode": "100644", "size": len(data),
+                               "sha": hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()}
+                              for p, data in files.items()]
+                commit, tree = anchored_tree(entries, "e"*40)
+                tree["sha"] = commit["tree"]["sha"]
+                with self.assertRaisesRegex(ValueError, "fingerprint"):
+                    ci.prepare("owner/repo", "token", root)
+                files["manifest.json"] = json.dumps(manifest).encode()
+                entries[:] = [{"path": p, "type": "blob", "mode": "100644", "size": len(data),
+                               "sha": hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()}
+                              for p, data in files.items()]
+                commit, tree = anchored_tree(entries, "e"*40)
+                tree["sha"] = commit["tree"]["sha"]
                 for defect in ("symlink", "hardlink", "traversal", "absolute", "duplicate",
                                "missing", "extra", "empty-tree", "prefix", "size", "blob", "historical-hash"):
                     mode["value"] = defect
@@ -187,7 +215,7 @@ class CiTests(unittest.TestCase):
     def test_prepare_full_pins_and_validates_one_archive_before_skip(self):
         snapshots = {"MetaCubeX/meta-rules-dat": "c"*40, "runetfreedom/russia-blocked-geoip": "d"*40}
         state = {"branch": True, "truncated": False, "corrupt": False, "fingerprint": "b"*64}
-        contents = {"manifest.json": b"manifest", "rule-providers.yaml": b"providers"}
+        contents = {"manifest.json": b'{"ci_fingerprint": "fixture"}', "rule-providers.yaml": b"providers"}
         def fake_api(path, token, missing=False):
             if path == "repos/KaringX/karing-ruleset/git/ref/heads/sing":
                 return {"object": {"sha": "a"*40}}
@@ -317,6 +345,17 @@ class CiTests(unittest.TestCase):
             for name in ("README.md", "THIRD_PARTY.md"):
                 (root / name).write_text(name)
                 manifest["outputs"][name] = hashlib.sha256(name.encode()).hexdigest()
+            (root / "manifest.json").write_text(json.dumps(manifest))
+            ci.validate(root, historical=True)
+            commit_object, tree = anchored_tree([{"path": s["source"], "type": "blob", "mode": "100644",
+                "sha": s["git_blob"], "size": 1} for s in manifest["sources"]], "a"*40)
+            with patch.object(ci, "load_exclusions", return_value={excluded["source"]: [excluded["reason"], excluded["git_blob"]]}), \
+                    patch.dict("os.environ", {"GH_TOKEN": "test"}), \
+                    patch.object(ci, "api", side_effect=lambda path, token: commit_object if "/commits/" in path else tree):
+                with self.assertRaisesRegex(ValueError, "invalid outputs"):
+                    ci.validate(root, expected_native_snapshots=manifest["native_snapshots"])
+            (root / "GUIDE.md").write_text("GUIDE.md")
+            manifest["outputs"]["GUIDE.md"] = hashlib.sha256(b"GUIDE.md").hexdigest()
             (root / "manifest.json").write_text(json.dumps(manifest))
             ci.validate(root, historical=True)
             manifest["source_origin"] = "git_blob_verified"
@@ -569,7 +608,7 @@ class CiTests(unittest.TestCase):
         self.assertEqual(len(uploads), 1)
         self.assertIn("LICENSING_PROVENANCE_APPROVED", uploads[0]["if"])
         self.assertIn("product/mihomo", uploads[0]["with"]["path"])
-        for name in ("rule-providers.yaml", "manifest.json", "README.md", "THIRD_PARTY.md"):
+        for name in ("rule-providers.yaml", "manifest.json", "README.md", "THIRD_PARTY.md", "GUIDE.md"):
             self.assertIn("product/" + name, uploads[0]["with"]["path"])
         steps = doc["jobs"]["build"]["steps"]
         build = next(step for step in steps if step.get("name") == "Build and validate offline")
@@ -607,7 +646,7 @@ class CiTests(unittest.TestCase):
             paths = ["config/tools.json", "config/exclusions.json", "scripts/catalog.py",
                      "scripts/build.py", "scripts/native.py", "scripts/ci.py",
                      "scripts/fetch_tools.py", "scripts/integration_check.py", "scripts/publish.py",
-                     ".github/workflows/build.yml", "README.md", "THIRD_PARTY.md"]
+                     ".github/workflows/build.yml", "README.md", "THIRD_PARTY.md", "GUIDE.md"]
             for name in paths:
                 file = root / name
                 file.parent.mkdir(parents=True, exist_ok=True)

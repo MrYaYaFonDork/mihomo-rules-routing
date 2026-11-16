@@ -99,7 +99,7 @@ class FullBuildTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="full-test-") as tmp:
             root = Path(tmp)
             (root / "config").mkdir()
-            for name in ("README.md", "THIRD_PARTY.md"):
+            for name in ("README.md", "THIRD_PARTY.md", "GUIDE.md"):
                 (root / name).write_text(name)
             (root / "config/tools.json").write_text(json.dumps({
                 "sing-box": {"version": "v", "binary_sha256": "x"},
@@ -273,7 +273,7 @@ class FullBuildTests(unittest.TestCase):
                 "sing-box": {"version": "v", "binary_sha256": "x"},
                 "mihomo": {"version": "v", "binary_sha256": "x"}}))
             (root / "config/exclusions.json").write_text("{}")
-            for name in ("README.md", "THIRD_PARTY.md"):
+            for name in ("README.md", "THIRD_PARTY.md", "GUIDE.md"):
                 (root / name).write_text(name)
             paths = ["geo/geosite/a.srs", "geo/geosite/b.srs", "geo/geosite/c.srs"]
             for path in paths:
@@ -314,7 +314,7 @@ class FullBuildTests(unittest.TestCase):
                 self.assertEqual((root / "out" / a["output"]).read_bytes(), b"native")
                 self.assertEqual(b["native_reason"], "not equivalent")
                 self.assertEqual(c["native_reason"], "classical behavior")
-                for name in ("README.md", "THIRD_PARTY.md"):
+                for name in ("README.md", "THIRD_PARTY.md", "GUIDE.md"):
                     self.assertEqual(manifest["outputs"][name], hashlib.sha256((root / name).read_bytes()).hexdigest())
                 native.return_value.maybe_reuse.side_effect = RuntimeError("proof failed")
                 with self.assertRaisesRegex(RuntimeError, "proof failed"):
