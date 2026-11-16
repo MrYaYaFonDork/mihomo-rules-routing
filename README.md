@@ -1,27 +1,27 @@
-# Библиотека правил Mihomo
+# Mihomo rules library
 
-Отдельные наборы rule-provider для Mihomo, собранные из закреплённого снимка [Karing ruleset](https://github.com/KaringX/karing-ruleset). Каталог и происхождение наборов описаны в `manifest.json`, готовые определения — в `rule-providers.yaml` ветки `rules`.
+Individual rule-provider sets for Mihomo, built from a pinned snapshot of [Karing ruleset](https://github.com/KaringX/karing-ruleset). The catalog and provenance of the sets are described in `manifest.json`; ready-to-use definitions are in `rule-providers.yaml` on the `rules` branch.
 
-## Источники
+## Sources
 
-Основной вход — SRS из [KaringX/karing-ruleset, ветка `sing`](https://github.com/KaringX/karing-ruleset/tree/sing); закреплённый коммит записывается в `manifest.json`. Порядок сборки Karing описан в его [workflow](https://github.com/KaringX/karing-ruleset/blob/workflow/.github/workflows/run.yml). Он объединяет:
+The primary input is SRS from [KaringX/karing-ruleset, `sing` branch](https://github.com/KaringX/karing-ruleset/tree/sing); the pinned commit is recorded in `manifest.json`. Karing's build process is described in its [workflow](https://github.com/KaringX/karing-ruleset/blob/workflow/.github/workflows/run.yml). It combines:
 
-- [ACL4SSR/ACL4SSR](https://github.com/ACL4SSR/ACL4SSR/tree/master) (`master`): Clash `.list` преобразуются в ACL.
-- [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat/tree/sing) (`sing`) и [hiddify/hiddify-geo](https://github.com/hiddify/hiddify-geo/tree/rule-set) (`rule-set`).
-- [Chocolate4U/Iran-sing-box-rules](https://github.com/Chocolate4U/Iran-sing-box-rules/tree/rule-set) (`rule-set`): недостающие наборы, при этом `ir` перезаписывается.
-- [runetfreedom/russia-v2ray-rules-dat](https://github.com/runetfreedom/russia-v2ray-rules-dat/tree/release) (`release`): `blocked@ru` и другие наборы.
+- [ACL4SSR/ACL4SSR](https://github.com/ACL4SSR/ACL4SSR/tree/master) (`master`): Clash `.list` files are converted to ACL.
+- [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat/tree/sing) (`sing`) and [hiddify/hiddify-geo](https://github.com/hiddify/hiddify-geo/tree/rule-set) (`rule-set`).
+- [Chocolate4U/Iran-sing-box-rules](https://github.com/Chocolate4U/Iran-sing-box-rules/tree/rule-set) (`rule-set`): missing sets, with `ir` overwritten.
+- [runetfreedom/russia-v2ray-rules-dat](https://github.com/runetfreedom/russia-v2ray-rules-dat/tree/release) (`release`): `blocked@ru` and other sets.
 - [savely-krasovsky/antizapret-sing-box](https://github.com/savely-krasovsky/antizapret-sing-box): antizapret.
-- [217heidai/adblockfilters](https://github.com/217heidai/adblockfilters): дополнение `BanAD`.
-- [d3ward/toolz](https://github.com/d3ward/toolz): `adblock_data.json` для `BanADCompany`.
-- [AdGuard HostlistsRegistry](https://adguardteam.github.io/HostlistsRegistry/assets/filters.json): каталог фильтров AdGuard.
+- [217heidai/adblockfilters](https://github.com/217heidai/adblockfilters): additions to `BanAD`.
+- [d3ward/toolz](https://github.com/d3ward/toolz): `adblock_data.json` for `BanADCompany`.
+- [AdGuard HostlistsRegistry](https://adguardteam.github.io/HostlistsRegistry/assets/filters.json): AdGuard filter catalog.
 
-Готовые Mihomo MRS из [MetaCubeX/meta-rules-dat, ветка `meta`](https://github.com/MetaCubeX/meta-rules-dat/tree/meta) и [runetfreedom/russia-blocked-geoip](https://github.com/runetfreedom/russia-blocked-geoip/tree/release) (`release`) используются только при доказанном совпадении содержимого с преобразованным входом Karing. Инструменты сборки — [sing-box](https://github.com/SagerNet/sing-box) и [mihomo](https://github.com/MetaCubeX/mihomo); их версии и хеши указаны в [config/tools.json](config/tools.json).
+Prebuilt Mihomo MRS files from [MetaCubeX/meta-rules-dat, `meta` branch](https://github.com/MetaCubeX/meta-rules-dat/tree/meta) and [runetfreedom/russia-blocked-geoip](https://github.com/runetfreedom/russia-blocked-geoip/tree/release) (`release`) are used only when their contents are proven equivalent to the converted Karing input. The build tools are [sing-box](https://github.com/SagerNet/sing-box) and [mihomo](https://github.com/MetaCubeX/mihomo); their versions and hashes are listed in [config/tools.json](config/tools.json).
 
-## Быстрый старт
+## Quick start
 
-Ссылки ведут в этот репозиторий; если вы публикуете свою копию, замените владельца и имя. Raw-ссылки работают, только если репозиторий публичный и ветка `rules` опубликована. Замените `PROXY` на имя существующей прокси-группы в вашем профиле; `DIRECT` и `REJECT` — встроенные политики. Объедините эти разделы с существующими в профиле, не создавая второй `rules` или `rule-providers`.
+The links point to this repository; if you publish your own copy, replace the owner and repository name. Raw links work only if the repository is public and the `rules` branch has been published. Replace `PROXY` with the name of an existing proxy group in your profile; `DIRECT` and `REJECT` are built-in policies. Merge these sections into the existing ones in your profile rather than creating a second `rules` or `rule-providers` section.
 
-Ниже готовый пример: блокировки рекламы и опасных сайтов, локальные доменные имена (`geosite/private`) и частные IP-диапазоны (`geoip/private`) напрямую, сервисы через прокси, заблокированные в РФ ресурсы через прокси, российские ресурсы напрямую и завершающее правило. Порядок важен: срабатывает первое совпадение. Если блокировка рекламы мешает сайту, уберите соответствующее правило.
+The ready-to-use example below blocks ads and dangerous sites, routes local domain names (`geosite/private`) and private IP ranges (`geoip/private`) directly, routes services and resources blocked in Russia through a proxy, routes Russian resources directly, and ends with a catch-all rule. Order matters: the first matching rule applies. If ad blocking interferes with a site, remove the corresponding rule.
 
 ```yaml
 rule-providers:
@@ -197,20 +197,20 @@ rules:
 - MATCH,DIRECT
 ```
 
-Подробнее о подключении, проверке и устранении ошибок — [GUIDE.md](GUIDE.md).
+For details on setup, verification, and troubleshooting, see [GUIDE.md](GUIDE.md) (in Russian).
 
-## Правовая информация
+## Legal notice
 
-Проект некоммерческий и создан исключительно для личного использования. Он не связан с авторами исходных наборов правил, не одобрен и не поддерживается ими.
+This project is non-commercial and was created exclusively for personal use. It is not affiliated with, endorsed by, or supported by the authors of the upstream rule sets.
 
-Автор проекта не претендует на какие-либо права, в том числе исключительные и авторские, на наборы правил, списки доменов и IP-адресов и другие данные третьих лиц, распространяемые в ветке `rules`. Все права на них принадлежат соответствующим правообладателям, перечисленным в разделе «Источники», и регулируются условиями их лицензий. Публикация в этом репозитории не означает предоставления каких-либо прав или лицензий на эти данные.
+The project author claims no rights, including exclusive rights or copyright, in the third-party rule sets, lists of domain names and IP addresses, or other third-party data distributed on the `rules` branch. All rights to that data belong to the respective rights holders listed in the "Sources" section and are governed by the terms of their licenses. Publication in this repository does not grant any rights or licenses to that data.
 
-Материалы предоставляются «как есть» (as is), без каких-либо гарантий, явных или подразумеваемых, включая гарантии полноты, точности, пригодности для определённой цели и отсутствия нарушений прав третьих лиц. Автор не несёт ответственности за любые убытки, прямые или косвенные, возникшие в связи с использованием или невозможностью использования материалов. Пользователь самостоятельно отвечает за соблюдение лицензий источников и применимого законодательства.
+The materials are provided "as is", without any warranties, express or implied, including warranties of completeness, accuracy, fitness for a particular purpose, and non-infringement of third-party rights. The author is not liable for any direct or indirect damages arising from the use of, or inability to use, the materials. Users are responsible for complying with the source licenses and applicable law.
 
-Если вы правообладатель и считаете, что материалы размещены с нарушением ваших прав, создайте issue в этом репозитории: соответствующие данные будут удалены.
+If you are a rights holder and believe that materials have been published in violation of your rights, open an issue in this repository: the relevant data will be removed.
 
-## Для разработчиков
+## For developers
 
-Полная сборка требует Python, `unshare`, `ip` и закреплённых инструментов из `config/tools.json`; тесты запускаются командой `python -m unittest discover -s tests`. См. `scripts/build.py --help` и `scripts/integration_check.py --help`. Проверка Mihomo выполняется в отдельном network namespace.
+A full build requires Python, `unshare`, `ip`, and the pinned tools listed in `config/tools.json`; run tests with `python -m unittest discover -s tests`. See `scripts/build.py --help` and `scripts/integration_check.py --help`. Mihomo validation runs in a separate network namespace.
 
-Workflow пересобирает данные ежедневно и вручную. Артефакт и публикация разрешены только при `LICENSING_PROVENANCE_APPROVED=true`; сама переменная не подтверждает права upstream. Ветка `rules` — orphan-снимок; для отката требуется заново собрать и проверить нужные revisions.
+The workflow rebuilds the data daily and on manual dispatch. Artifact upload and publication are allowed only when `LICENSING_PROVENANCE_APPROVED=true`; the variable itself does not confirm upstream rights. The `rules` branch is an orphan snapshot; rolling back requires rebuilding and verifying the desired revisions.
