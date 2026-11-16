@@ -463,7 +463,7 @@ def main():
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--sing-box", type=Path, required=True)
     parser.add_argument("--mihomo", type=Path, required=True)
-    parser.add_argument("--base-url", default="https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules")
+    parser.add_argument("--base-url", default="https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules")
     args = parser.parse_args()
     if not re.fullmatch(r"[0-9a-f]{40}", args.commit):
         parser.error("commit must be 40 lowercase hexadecimal characters")

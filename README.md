@@ -30,147 +30,147 @@ rule-providers:
     behavior: classical
     format: yaml
     path: ./mihomo/geosite/category-ads-all.yaml
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/category-ads-all.yaml
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/category-ads-all.yaml
     interval: 86400
   mihomo/acl/BanAD:
     type: http
     behavior: classical
     format: yaml
     path: ./mihomo/acl/BanAD.yaml
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/acl/BanAD.yaml
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/acl/BanAD.yaml
     interval: 86400
   mihomo/geosite/malware:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/malware.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/malware.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/malware.mrs
     interval: 86400
   mihomo/geosite/phishing:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/phishing.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/phishing.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/phishing.mrs
     interval: 86400
   mihomo/geosite/cryptominers:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/cryptominers.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/cryptominers.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/cryptominers.mrs
     interval: 86400
   mihomo/geosite/private:
     type: http
     behavior: classical
     format: yaml
     path: ./mihomo/geosite/private.yaml
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/private.yaml
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/private.yaml
     interval: 86400
   mihomo/geoip/private:
     type: http
     behavior: ipcidr
     format: mrs
     path: ./mihomo/geoip/private.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geoip/private.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geoip/private.mrs
     interval: 86400
   mihomo/geosite/youtube:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/youtube.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/youtube.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/youtube.mrs
     interval: 86400
   mihomo/geosite/telegram:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/telegram.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/telegram.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/telegram.mrs
     interval: 86400
   mihomo/geoip/telegram:
     type: http
     behavior: ipcidr
     format: mrs
     path: ./mihomo/geoip/telegram.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geoip/telegram.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geoip/telegram.mrs
     interval: 86400
   mihomo/geosite/discord:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/discord.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/discord.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/discord.mrs
     interval: 86400
   mihomo/geosite/google:
     type: http
     behavior: classical
     format: yaml
     path: ./mihomo/geosite/google.yaml
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/google.yaml
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/google.yaml
     interval: 86400
   mihomo/geosite/openai:
     type: http
     behavior: classical
     format: yaml
     path: ./mihomo/geosite/openai.yaml
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/openai.yaml
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/openai.yaml
     interval: 86400
   mihomo/geosite/anthropic:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/anthropic.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/anthropic.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/anthropic.mrs
     interval: 86400
   mihomo/geosite/google-gemini:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/google-gemini.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/google-gemini.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/google-gemini.mrs
     interval: 86400
   mihomo/geosite/steam:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/steam.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/steam.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/steam.mrs
     interval: 86400
   mihomo/geosite/epicgames:
     type: http
     behavior: classical
     format: yaml
     path: ./mihomo/geosite/epicgames.yaml
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/epicgames.yaml
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/epicgames.yaml
     interval: 86400
   mihomo/geosite/blocked@ru:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/blocked@ru.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/blocked%40ru.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/blocked%40ru.mrs
     interval: 86400
   mihomo/geoip/blocked@ru:
     type: http
     behavior: ipcidr
     format: mrs
     path: ./mihomo/geoip/blocked@ru.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geoip/blocked%40ru.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geoip/blocked%40ru.mrs
     interval: 86400
   mihomo/geosite/category-ru:
     type: http
     behavior: domain
     format: mrs
     path: ./mihomo/geosite/category-ru.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geosite/category-ru.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geosite/category-ru.mrs
     interval: 86400
   mihomo/geoip/ru:
     type: http
     behavior: ipcidr
     format: mrs
     path: ./mihomo/geoip/ru.mrs
-    url: https://raw.githubusercontent.com/MrALDAP/mihomo-rules-routing/rules/mihomo/geoip/ru.mrs
+    url: https://raw.githubusercontent.com/MrYaYaFonDork/mihomo-rules-routing/rules/mihomo/geoip/ru.mrs
     interval: 86400
 rules:
 - RULE-SET,mihomo/geosite/category-ads-all,REJECT
