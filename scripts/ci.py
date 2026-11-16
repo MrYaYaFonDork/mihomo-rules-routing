@@ -15,10 +15,12 @@ import tarfile
 import yaml
 try:
     from scripts.catalog import output_stem, anchored_inventory
+    from scripts.build import normalize_full_rules
     from scripts.native import _candidate, _safe_path
     from scripts.publish import publish_snapshot
 except ModuleNotFoundError:
     from catalog import output_stem, anchored_inventory
+    from build import normalize_full_rules
     from native import _candidate, _safe_path
     from publish import publish_snapshot
 
@@ -43,7 +45,7 @@ def full_fingerprint(commit, native_snapshots, base_url):
                    for sha in native_snapshots.values())
             or not isinstance(base_url, str) or not base_url.startswith("https://")):
         raise ValueError("invalid fingerprint inputs")
-    paths = ("config/tools.json", "config/exclusions.json", "scripts/catalog.py", "scripts/build.py",
+    paths = ("config/tools.json", "scripts/catalog.py", "scripts/build.py",
              "scripts/native.py", "scripts/ci.py", "scripts/fetch_tools.py", "scripts/integration_check.py",
              "scripts/publish.py", ".github/workflows/build.yml", "README.md", "GUIDE.md")
     fields = [b"full", commit.encode(), base_url.encode()]
@@ -66,10 +68,6 @@ class UniqueLoader(yaml.SafeLoader):
                 raise ValueError("duplicate provider key")
             result[key] = self.construct_object(value_node, deep=deep)
         return result
-
-
-def load_exclusions():
-    return json.loads((ROOT / "config/exclusions.json").read_text())
 
 
 def validate(root, unstamped=False, expected_commit=None, expected_fingerprint=None, historical=False,
@@ -199,7 +197,6 @@ def validate_full(root, manifest, unstamped, expected_commit, expected_fingerpri
     if not isinstance(manifest["sources"], list) or not manifest["sources"] or not isinstance(manifest["excluded"], list):
         raise ValueError("invalid sources")
     mapping, seen, stems, exclusions = {}, set(), set(), []
-    policy = load_exclusions() if not historical else None
     for source in manifest["sources"]:
         if not isinstance(source, dict):
             raise ValueError("invalid source")
@@ -211,18 +208,48 @@ def validate_full(root, manifest, unstamped, expected_commit, expected_fingerpri
         if (not isinstance(source.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", source["sha256"])
                 or not isinstance(source.get("git_blob"), str) or not re.fullmatch(r"[0-9a-f]{40}", source["git_blob"])):
             raise ValueError("invalid source hash")
+        normalization = source.get("normalization")
+        if normalization is not None:
+            if (not isinstance(normalization, dict) or set(normalization) != {"changed", "dropped", "removed_rules"}
+                    or not isinstance(normalization["changed"], dict)
+                    or set(normalization["changed"]) - {"lower", "trailing_dot", "wildcard", "idna"}
+                    or any(type(count) is not int or count <= 0 for count in normalization["changed"].values())
+                    or not isinstance(normalization["dropped"], list)
+                    or type(normalization["removed_rules"]) is not int or normalization["removed_rules"] < 0
+                    or not (normalization["changed"] or normalization["dropped"])):
+                raise ValueError("invalid normalization")
+            for dropped in normalization["dropped"]:
+                if (not isinstance(dropped, dict) or set(dropped) != {"field", "value", "reason"}
+                        or dropped["field"] not in ("domain", "domain_suffix")
+                        or not isinstance(dropped["value"], str)
+                        or dropped["reason"] not in ("invalid domain", "invalid idna", "wildcard too broad")):
+                    raise ValueError("invalid normalization")
+                if not historical:
+                    try:
+                        _, result = normalize_full_rules([{dropped["field"]: dropped["value"]}])
+                    except ValueError as exc:
+                        raise ValueError("invalid normalization") from exc
+                    if result["dropped"] != [dropped]:
+                        raise ValueError("invalid normalization")
         if "reason" in source:
-            if set(source) != {"source", "sha256", "git_blob", "reason"} or source["reason"] not in (
-                    "invalid domain", "sing-box cannot decompile binary AdGuard rules"):
+            reason = source["reason"]
+            fields = {"source", "sha256", "git_blob", "reason"}
+            if reason == "no rules after normalization":
+                fields.add("normalization")
+                allowed = normalization is not None and bool(normalization["dropped"]) and normalization["removed_rules"] > 0
+            else:
+                allowed = (reason == "sing-box cannot decompile binary AdGuard rules"
+                           and source["source"].startswith("AdGuard/HostlistsRegistry/"))
+                if historical and reason in ("invalid domain", "sing-box cannot decompile binary AdGuard rules"):
+                    allowed = True
+            if set(source) != fields or not allowed:
                 raise ValueError("invalid exclusion")
-            if policy is not None and policy.get(source["source"]) != [source["reason"], source["git_blob"]]:
-                raise ValueError("unapproved exclusion")
             exclusions.append(source)
             continue
         method = source.get("method")
         details = {"native"} if method == "native_mrs" else {"native_reason"}
         if (set(source) != {"source", "sha256", "git_blob", "providers", "count", "behavior", "format",
-                            "output", "method"} | details
+                            "output", "method"} | details | ({"normalization"} if normalization is not None else set())
                 or source["providers"] != [stem] or type(source["count"]) is not int or source["count"] <= 0
                 or (source["behavior"], source["format"]) not in (("domain", "mrs"), ("ipcidr", "mrs"), ("classical", "yaml"))
                 or source["output"] != stem + "." + source["format"]):

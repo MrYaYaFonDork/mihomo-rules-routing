@@ -69,6 +69,77 @@ def anchored_tree(entries, commit):
 
 
 class CiTests(unittest.TestCase):
+    def test_current_normalization_and_adguard_policy_and_historical_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "mihomo").mkdir()
+            (root / "mihomo/a.mrs").write_bytes(b"x")
+            name = "mihomo/a"
+            (root / "rule-providers.yaml").write_text(providers_yaml({name: {
+                "type": "http", "behavior": "domain", "format": "mrs",
+                "path": "./mihomo/a.mrs", "url": "https://example.test/mihomo/a.mrs", "interval": 86400}}))
+            for name_doc in ("README.md", "GUIDE.md"):
+                (root / name_doc).write_text(name_doc)
+            report = {"changed": {"lower": 1}, "dropped": [{"field": "domain", "value": "bad,", "reason": "invalid domain"}], "removed_rules": 0}
+            source = {"source": "a.srs", "sha256": "1"*64, "git_blob": "2"*40,
+                      "providers": [name], "count": 1, "behavior": "domain", "format": "mrs",
+                      "output": "mihomo/a.mrs", "method": "converted_srs",
+                      "native_reason": "candidate absent", "normalization": report}
+            excluded = {"source": "AdGuard/HostlistsRegistry/a.srs", "sha256": "3"*64,
+                        "git_blob": "4"*40, "reason": "sing-box cannot decompile binary AdGuard rules"}
+            snapshots = {"MetaCubeX/meta-rules-dat": "c"*40, "runetfreedom/russia-blocked-geoip": "d"*40}
+            manifest = {"source_origin": "authenticated_download", "upstream_commit": "a"*40,
+                        "ci_fingerprint": "b"*64, "native_snapshots": snapshots,
+                        "sources": [source, excluded], "excluded": [excluded],
+                        "tools": {n: {"version": t["version"], "binary_sha256": t["binary_sha256"]}
+                                  for n, t in json.loads(Path("config/tools.json").read_text()).items()},
+                        "outputs": {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                                    for p in root.rglob("*") if p.is_file()}}
+            def write():
+                (root / "manifest.json").write_text(json.dumps(manifest))
+            commit_obj, tree = anchored_tree([{"path": s["source"], "type": "blob", "mode": "100644",
+                                               "sha": s["git_blob"], "size": 1}
+                                              for s in manifest["sources"]], "a"*40)
+            with patch.dict("os.environ", {"GH_TOKEN": "test"}), \
+                 patch.object(ci, "api", side_effect=lambda path, token: commit_obj if "/commits/" in path else tree):
+                write()
+                ci.validate(root, expected_native_snapshots=snapshots)
+                for value, reason in (("EXAMPLE.COM.", "invalid domain"),
+                                      ("*.example.com", "wildcard too broad"),
+                                      ("bad,", "invalid idna")):
+                    report["dropped"][0].update({"value": value, "reason": reason})
+                    write()
+                    with self.subTest(value=value, reason=reason), self.assertRaisesRegex(ValueError, "normalization"):
+                        ci.validate(root, expected_native_snapshots=snapshots)
+                report["dropped"][0].update({"value": "bad,", "reason": "invalid domain"})
+                excluded.update({"reason": "no rules after normalization", "normalization": {
+                    "changed": {}, "dropped": [{"field": "domain", "value": "bad,", "reason": "invalid domain"}],
+                    "removed_rules": 1}})
+                write()
+                ci.validate(root, expected_native_snapshots=snapshots)
+                excluded["normalization"]["dropped"][0]["value"] = "valid.example"
+                write()
+                with self.assertRaisesRegex(ValueError, "normalization"):
+                    ci.validate(root, expected_native_snapshots=snapshots)
+                excluded["normalization"]["dropped"][0]["value"] = "bad,"
+                excluded["normalization"]["removed_rules"] = 0
+                write()
+                with self.assertRaises(ValueError):
+                    ci.validate(root, expected_native_snapshots=snapshots)
+                excluded.pop("normalization")
+                excluded["reason"] = "invalid domain"
+                write()
+                with self.assertRaises(ValueError):
+                    ci.validate(root, expected_native_snapshots=snapshots)
+                source.pop("normalization")
+                write()
+                ci.validate(root, historical=True)
+                excluded["reason"] = "sing-box cannot decompile binary AdGuard rules"
+                excluded["source"] = "other/a.srs"
+                write()
+                with self.assertRaises(ValueError):
+                    ci.validate(root, expected_native_snapshots=snapshots)
+
     def test_prepare_historical_full_snapshot_rejects_invalid_tree_and_archives(self):
         snapshots = {"MetaCubeX/meta-rules-dat": "c"*40,
                      "runetfreedom/russia-blocked-geoip": "d"*40}
@@ -329,7 +400,7 @@ class CiTests(unittest.TestCase):
                 "interval": 86400}}
             data = providers_yaml(providers).encode()
             (root / "rule-providers.yaml").write_bytes(data)
-            excluded = {"source": "bad.srs", "sha256": "1"*64, "git_blob": "2"*40, "reason": "invalid domain"}
+            excluded = {"source": "AdGuard/HostlistsRegistry/bad.srs", "sha256": "1"*64, "git_blob": "2"*40, "reason": "sing-box cannot decompile binary AdGuard rules"}
             source = {"source": "geo/geosite/A+!.srs", "sha256": "3"*64, "git_blob": "4"*40,
                       "providers": ["mihomo/geosite/A+!"], "count": 1, "behavior": "domain",
                       "format": "mrs", "output": path, "method": "converted_srs",
@@ -349,8 +420,7 @@ class CiTests(unittest.TestCase):
             ci.validate(root, historical=True)
             commit_object, tree = anchored_tree([{"path": s["source"], "type": "blob", "mode": "100644",
                 "sha": s["git_blob"], "size": 1} for s in manifest["sources"]], "a"*40)
-            with patch.object(ci, "load_exclusions", return_value={excluded["source"]: [excluded["reason"], excluded["git_blob"]]}), \
-                    patch.dict("os.environ", {"GH_TOKEN": "test"}), \
+            with patch.dict("os.environ", {"GH_TOKEN": "test"}), \
                     patch.object(ci, "api", side_effect=lambda path, token: commit_object if "/commits/" in path else tree):
                 with self.assertRaisesRegex(ValueError, "invalid outputs"):
                     ci.validate(root, expected_native_snapshots=manifest["native_snapshots"])
@@ -358,8 +428,7 @@ class CiTests(unittest.TestCase):
             manifest["outputs"]["GUIDE.md"] = hashlib.sha256(b"GUIDE.md").hexdigest()
             (root / "manifest.json").write_text(json.dumps(manifest))
             ci.validate(root, historical=True)
-            with patch.object(ci, "load_exclusions", return_value={excluded["source"]: [excluded["reason"], excluded["git_blob"]]}), \
-                    patch.dict("os.environ", {"GH_TOKEN": "test"}), \
+            with patch.dict("os.environ", {"GH_TOKEN": "test"}), \
                     patch.object(ci, "api", side_effect=lambda path, token: commit_object if "/commits/" in path else tree):
                 with self.assertRaisesRegex(ValueError, "invalid outputs"):
                     ci.validate(root, expected_native_snapshots=manifest["native_snapshots"])
@@ -415,8 +484,7 @@ class CiTests(unittest.TestCase):
             native_commit, native_tree = anchored_tree([
                 {"path": s["source"], "type": "blob", "mode": "100644",
                  "sha": s["git_blob"], "size": 1} for s in native_manifest["sources"]], "a"*40)
-            with patch.dict("os.environ", {"GH_TOKEN": "test"}), patch.object(ci, "api", side_effect=lambda path, token: native_commit if "/commits/" in path else native_tree), \
-                    patch.object(ci, "load_exclusions", return_value={excluded["source"]: [excluded["reason"], excluded["git_blob"]]}):
+            with patch.dict("os.environ", {"GH_TOKEN": "test"}), patch.object(ci, "api", side_effect=lambda path, token: native_commit if "/commits/" in path else native_tree):
                 ci.validate(root, expected_native_snapshots=snapshots)
                 entry = next(item for item in native_tree["tree"] if item["path"] == source["source"])
                 original_sha = entry["sha"]
@@ -449,16 +517,10 @@ class CiTests(unittest.TestCase):
             commit_obj, tree = anchored_tree([
                 {"path": source["source"], "type": "blob", "mode": "100644", "sha": "4"*40, "size": 1},
                 {"path": excluded["source"], "type": "blob", "mode": "100644", "sha": "2"*40, "size": 1}], "a"*40)
-            policy = {excluded["source"]: [excluded["reason"], excluded["git_blob"]]}
-            with patch.dict("os.environ", {"GH_TOKEN": "test"}), patch.object(ci, "api", side_effect=lambda path, token: commit_obj if "/commits/" in path else tree), \
-                    patch.object(ci, "load_exclusions", return_value=policy):
+            with patch.dict("os.environ", {"GH_TOKEN": "test"}), patch.object(ci, "api", side_effect=lambda path, token: commit_obj if "/commits/" in path else tree):
                 with self.assertRaisesRegex(ValueError, "native snapshots"):
                     ci.validate(root)
                 ci.validate(root, expected_native_snapshots=snapshots)
-                policy.clear()
-                with self.assertRaisesRegex(ValueError, "unapproved exclusion"):
-                    ci.validate(root, expected_native_snapshots=snapshots)
-                policy[excluded["source"]] = [excluded["reason"], excluded["git_blob"]]
                 manifest["tools"]["mihomo"]["binary_sha256"] = "f" * 64
                 (root / "manifest.json").write_text(json.dumps(manifest))
                 with self.assertRaisesRegex(ValueError, "tool"):
@@ -652,7 +714,7 @@ class CiTests(unittest.TestCase):
     def test_full_fingerprint_covers_all_inputs_and_requires_files(self):
         with tempfile.TemporaryDirectory(prefix="ci-fingerprint-") as tmp:
             root = Path(tmp)
-            paths = ["config/tools.json", "config/exclusions.json", "scripts/catalog.py",
+            paths = ["config/tools.json", "scripts/catalog.py",
                      "scripts/build.py", "scripts/native.py", "scripts/ci.py",
                      "scripts/fetch_tools.py", "scripts/integration_check.py", "scripts/publish.py",
                      ".github/workflows/build.yml", "README.md", "GUIDE.md"]

@@ -6,6 +6,7 @@ import io
 import tarfile
 import sys
 import os
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,6 +17,147 @@ SNAPSHOTS = {"MetaCubeX/meta-rules-dat": "c" * 40,
 
 
 class FullBuildTests(unittest.TestCase):
+    def test_wildcard_remainder_with_empty_labels_is_dropped(self):
+        from scripts.build import normalize_full_rules
+        values = ["+..example.com", "+.example..com", "*..example.com"]
+        for field in ("domain", "domain_suffix"):
+            with self.subTest(field=field):
+                rules, report = normalize_full_rules([{field: values}])
+                self.assertEqual(rules, [])
+                self.assertEqual([item["value"] for item in report["dropped"]], values)
+                self.assertTrue(all(item["reason"] == "invalid domain" for item in report["dropped"]))
+
+    def test_plus_prefix_is_suffix_and_rejects_broad_values(self):
+        from scripts.build import normalize_full_rules
+        for field in ("domain", "domain_suffix"):
+            with self.subTest(field=field):
+                rules, report = normalize_full_rules([{field: ["+.EXAMPLE.COM", "+.Пример.РФ", "+.com"]}])
+                self.assertEqual(rules, [{"domain_suffix": ["example.com", "xn--e1afmkfd.xn--p1ai"]}])
+                self.assertEqual(report["dropped"], [{"field": field, "value": "+.com", "reason": "wildcard too broad"}])
+
+    def test_exact_domain_with_leading_dot_is_dropped_not_fatal(self):
+        from scripts.build import normalize_full_rules
+        rules, report = normalize_full_rules([{"domain": [".example.com", "ok.example"]}])
+        self.assertEqual(rules, [{"domain": ["ok.example"]}])
+        self.assertEqual(report["dropped"], [{"field": "domain", "value": ".example.com", "reason": "invalid domain"}])
+        with self.assertRaisesRegex(ValueError, "invalid IP network"):
+            normalize_full_rules([{"domain": ".example.com", "ip_cidr": "bad"}])
+
+    def test_adguard_decompile_exclusion_is_limited_to_known_error_and_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config").mkdir()
+            (root / "config/tools.json").write_text(json.dumps({
+                "sing-box": {"version": "v", "binary_sha256": "x"},
+                "mihomo": {"version": "v", "binary_sha256": "x"}}))
+            for name in ("README.md", "GUIDE.md"):
+                (root / name).write_text(name)
+            known = b"unable to decompile binary AdGuard rules to rule-set."
+            cases = [("AdGuard/HostlistsRegistry/a.srs", known, True),
+                     ("AdGuard/HostlistsRegistry/a.srs", b"\x1b[31mFATAL\x1b[0m[0000] " + known + b"\n", True),
+                     ("AdGuard/HostlistsRegistry/a.srs", b"FATAL[0000] " + known + b"\nextra error\n", False),
+                     ("AdGuard/HostlistsRegistry/a.srs", known + b" extra error", False),
+                     ("other/a.srs", known, False),
+                     ("AdGuard/HostlistsRegistry/a.srs", b"other error", False)]
+            for index, (source, stderr, allowed) in enumerate(cases):
+                file = root / source
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_bytes(b"x")
+                blob = hashlib.sha1(b"blob 1\0x").hexdigest()
+                catalog = {source: (blob, 1)}
+                def run(args, **kwargs):
+                    raise subprocess.CalledProcessError(1, args, stderr=stderr)
+                with self.subTest(source=source, stderr=stderr), \
+                     patch("scripts.build.ROOT", root), patch("scripts.build.verify_sha256"), \
+                     patch("scripts.build.check_version", return_value={}), \
+                     patch("scripts.build.NativeCatalog"), patch("scripts.build.subprocess.run", side_effect=run):
+                    args = (root, root / f"out{index}", root, root / "sing", root / "mihomo",
+                            "a" * 40, "https://example.test")
+                    if allowed:
+                        build(*args, full_catalog=catalog, native_snapshots=SNAPSHOTS)
+                        excluded = json.loads((root / f"out{index}/manifest.json").read_text())["excluded"]
+                        self.assertEqual(excluded[0]["git_blob"], blob)
+                        self.assertEqual(excluded[0]["reason"], "sing-box cannot decompile binary AdGuard rules")
+                    else:
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            build(*args, full_catalog=catalog, native_snapshots=SNAPSHOTS)
+
+    def test_normalizes_domains_recursively_and_reports_drops(self):
+        from scripts.build import normalize_full_rules
+        rules = [{"type": "logical", "mode": "or", "invert": True, "rules": [
+            {"domain": ["EXAMPLE.COM.", "*.Пример.РФ", '"bad.example']},
+            {"domain_suffix": [".EXAMPLE.COM.", "x,y"]},
+            {"domain_keyword": "KeepCase", "ip_cidr": "192.0.2.0/24", "process_name": "App"},
+            {"domain": "bad,name"},
+        ]}]
+        result, report = normalize_full_rules(rules)
+        children = result[0]["rules"]
+        self.assertEqual(children[0]["domain"], ["example.com"])
+        self.assertEqual(children[0]["domain_suffix"], ["xn--e1afmkfd.xn--p1ai"])
+        self.assertEqual(children[1]["domain_suffix"], [".example.com"])
+        self.assertEqual(children[2], {"domain_keyword": "KeepCase", "ip_cidr": "192.0.2.0/24", "process_name": "App"})
+        self.assertTrue(result[0]["invert"])
+        self.assertEqual(len(children), 3)
+        self.assertEqual(len(report["dropped"]), 3)
+        self.assertEqual(report["removed_rules"], 1)
+        self.assertGreater(report["changed"]["lower"], 0)
+        self.assertGreater(report["changed"]["trailing_dot"], 0)
+        self.assertGreater(report["changed"]["wildcard"], 0)
+        self.assertGreater(report["changed"]["idna"], 0)
+
+    def test_normalization_does_not_hide_invalid_fields(self):
+        from scripts.build import normalize_full_rules
+        for extra in ({"unknown": "x"}, {"ip_cidr": "bad"}, {"domain_regex": "(?=x)"},
+                      {"process_name": []}, {"domain_suffix": []}):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                normalize_full_rules([{"domain": '"bad.example', **extra}])
+
+    def test_normalization_removes_empty_rules(self):
+        from scripts.build import normalize_full_rules
+        rules, report = normalize_full_rules([{"domain": '"bad.example'}])
+        self.assertEqual(rules, [])
+        self.assertEqual(report["dropped"][0]["value"], '"bad.example')
+        self.assertEqual(report["removed_rules"], 1)
+
+    def test_malformed_domains_are_dropped_without_repair(self):
+        from scripts.build import normalize_full_rules
+        values = ['"certr.ru', '"med-brat.com', '"sertifikat-med-3.org',
+                  'dokumentam24.ru,', 'krak%e1%ba%b9n.com', 'spravkasrochno.ru\\vse-spravki',
+                  '..пример.рф']
+        rules, report = normalize_full_rules([{"domain_suffix": values}])
+        self.assertEqual(rules, [])
+        self.assertEqual([item["value"] for item in report["dropped"]], values)
+
+    def test_build_records_normalization_and_emits_normalized_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config").mkdir()
+            (root / "config/tools.json").write_text(json.dumps({
+                "sing-box": {"version": "v", "binary_sha256": "x"},
+                "mihomo": {"version": "v", "binary_sha256": "x"}}))
+            for name in ("README.md", "GUIDE.md"):
+                (root / name).write_text(name)
+            (root / "a.srs").write_bytes(b"x")
+            catalog = {"a.srs": (hashlib.sha1(b"blob 1\0x").hexdigest(), 1)}
+            payloads = []
+            def run(args, **kwargs):
+                if "decompile" in args:
+                    Path(args[-1]).write_text(json.dumps({"version": 1, "rules": [
+                        {"domain": ["EXAMPLE.COM.", "*.Пример.РФ", "bad,"]}]}))
+                else:
+                    payloads.append(Path(args[-2]).read_text())
+                    Path(args[-1]).write_bytes(b"mrs")
+            with patch("scripts.build.ROOT", root), patch("scripts.build.verify_sha256"), \
+                 patch("scripts.build.check_version", return_value={}), \
+                 patch("scripts.build.NativeCatalog") as native, patch("scripts.build.subprocess.run", side_effect=run):
+                native.return_value.maybe_reuse.return_value = {"method": "converted_srs", "reason": "candidate absent"}
+                build(root, root / "out", root, root / "sing", root / "mihomo", "a"*40,
+                      "https://example.test", full_catalog=catalog, native_snapshots=SNAPSHOTS)
+            report = json.loads((root / "out/manifest.json").read_text())["sources"][0]["normalization"]
+            self.assertEqual(report["dropped"], [{"field": "domain", "value": "bad,", "reason": "invalid domain"}])
+            self.assertIn('"example.com"', payloads[0])
+            self.assertIn('"+.xn--e1afmkfd.xn--p1ai"', payloads[0])
+
     def test_fetch_catalog_checks_commit_root_against_tree_entries(self):
         from scripts import build as module
         blob = hashlib.sha1(b"blob 1\0x").hexdigest()
@@ -82,17 +224,6 @@ class FullBuildTests(unittest.TestCase):
             self.assertFalse(stage.exists())
             self.assertEqual((out / "data").read_text(), "new")
 
-    def test_exclusion_policy_requires_exact_source_reason_and_hash(self):
-        from scripts.build import approved_exclusion
-        policy = {"a.srs": ["invalid domain", "2" * 40]}
-        approved_exclusion(policy, "a.srs", "invalid domain", "2" * 40)
-        for source, reason, blob in (("b.srs", "invalid domain", "2" * 40),
-                                     ("a.srs", "other", "2" * 40),
-                                     ("a.srs", "invalid domain", "0" * 40)):
-            with self.subTest(source=source, reason=reason, blob=blob):
-                with self.assertRaises(ValueError):
-                    approved_exclusion(policy, source, reason, blob)
-
     @patch("scripts.build.NativeCatalog")
     def test_full_build_preserves_names_and_excludes_invalid_domain(self, native):
         native.return_value.maybe_reuse.return_value = {"method": "converted_srs", "reason": "candidate absent"}
@@ -132,6 +263,8 @@ class FullBuildTests(unittest.TestCase):
             self.assertEqual(len(manifest["sources"]), 2)
             self.assertEqual(len(manifest["excluded"]), 1)
             self.assertEqual(manifest["excluded"][0]["source"], paths[1])
+            self.assertEqual(manifest["excluded"][0]["reason"], "no rules after normalization")
+            self.assertEqual(manifest["excluded"][0]["normalization"]["dropped"][0]["value"], "*.bad")
             self.assertTrue((root / "out/mihomo/geosite/a@!cn.mrs").is_file())
             self.assertIn("a%40%21cn.mrs", (root / "out/rule-providers.yaml").read_text())
             with patch("scripts.build.fetch_catalog", return_value=blobs), patch("scripts.build.ROOT", root), patch("scripts.build.verify_sha256"), \
@@ -160,15 +293,6 @@ class FullBuildTests(unittest.TestCase):
             with patch("scripts.build.fetch_catalog", return_value=blobs), patch("scripts.build.ROOT", root), patch("scripts.build.verify_sha256"), \
                     patch("scripts.build.check_version", return_value={}), \
                     patch("scripts.build.subprocess.run", side_effect=run):
-                for policy in ({}, {paths[1]: ["other", *approved[1:]]},
-                               {paths[1]: [approved[0], "0" * 40]}):
-                    (root / "config/exclusions.json").write_text(json.dumps(policy))
-                    with self.assertRaisesRegex(ValueError, "unapproved unsupported"):
-                        build(root, root / "rejected", root, root / "sing", root / "mihomo",
-                              "a" * 40, "https://example.test/rules", "authenticated_download",
-                              full_catalog=blobs, native_snapshots=SNAPSHOTS)
-                    self.assertFalse((root / "rejected").exists())
-                (root / "config/exclusions.json").write_text(json.dumps({paths[1]: approved}))
                 (root / paths[1]).write_bytes(b"corrupt")
                 with self.assertRaises(ValueError):
                     build(root, root / "rejected", root, root / "sing", root / "mihomo",

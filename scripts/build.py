@@ -42,11 +42,6 @@ def rename_noreplace(source, target):
         raise OSError(error, os.strerror(error), str(target))
 
 
-def approved_exclusion(policy, source, reason, git_blob):
-    if policy.get(source) != [reason, git_blob]:
-        raise ValueError(f"{source}: unapproved unsupported rule set ({reason})")
-
-
 def providers_yaml(providers):
     return "rule-providers:\n" + "".join(
         "  " + (name if re.fullmatch(r"[A-Za-z0-9_-]+", name) else json.dumps(name)) + ":\n" + "".join(
@@ -163,12 +158,13 @@ def extract_catalog(archive, catalog, destination):
 
 def validate_full_rules(rules):
     reason = None
+    domain_errors = ("invalid domain", "exact domain cannot start with a dot")
     def check(rule):
         nonlocal reason
         try:
             classical_lines(rule)
         except ValueError as exc:
-            if str(exc) != "invalid domain":
+            if str(exc) not in domain_errors:
                 raise
             reason = "invalid domain"
             if isinstance(rule, dict) and rule.get("type") == "logical":
@@ -181,17 +177,91 @@ def validate_full_rules(rules):
                             classical_lines({key: values})
                             continue
                         except ValueError as field_error:
-                            if str(field_error) != "invalid domain":
+                            if str(field_error) not in domain_errors:
                                 raise
                         for value in values if isinstance(values, list) else [values]:
                             try:
                                 classical_lines({key: value})
                             except ValueError as item_error:
-                                if str(item_error) != "invalid domain":
+                                if str(item_error) not in domain_errors:
                                     raise
     for rule in rules:
         check(rule)
     return reason
+
+
+def normalize_full_rules(rules):
+    validate_full_rules(rules)
+    report = {"changed": {}, "dropped": [], "removed_rules": 0}
+
+    def normalize(rule):
+        rule = dict(rule)
+        if rule.get("type") == "logical":
+            rule["rules"] = [result for child in rule["rules"] if (result := normalize(child)) is not None]
+            if not rule["rules"]:
+                report["removed_rules"] += 1
+                return None
+            return rule
+        domains, suffixes = [], []
+        for field, target in (("domain", domains), ("domain_suffix", suffixes)):
+            if field not in rule:
+                continue
+            values = rule.pop(field)
+            for value in values if isinstance(values, list) else [values]:
+                original = value
+                kinds = []
+                value = value.lower()
+                if value != original:
+                    kinds.append("lower")
+                if value.endswith(".") and not value.endswith(".."):
+                    value = value[:-1]
+                    kinds.append("trailing_dot")
+                wildcard = "*" in value or value.startswith("+.")
+                reason = None
+                if wildcard:
+                    labels = value.lstrip(".").split(".")
+                    rest = (labels[max(i for i, label in enumerate(labels) if "*" in label) + 1:]
+                            if "*" in value else labels[1:])
+                    if not all(rest):
+                        reason = "invalid domain"
+                    elif len(rest) < 2:
+                        reason = "wildcard too broad"
+                    else:
+                        value = ".".join(rest)
+                        kinds.append("wildcard")
+                if reason is None and not value.isascii():
+                    try:
+                        lead = "." if value.startswith(".") else ""
+                        value = lead + ".".join(label.encode("idna").decode("ascii")
+                                                for label in (value[1:] if lead else value).split("."))
+                        kinds.append("idna")
+                    except UnicodeError:
+                        reason = "invalid idna"
+                key = "domain_suffix" if wildcard else field
+                if reason is None:
+                    try:
+                        convert_rule({key: value})
+                    except ValueError:
+                        reason = "invalid domain"
+                if reason:
+                    report["dropped"].append({"field": field, "value": original, "reason": reason})
+                else:
+                    (suffixes if wildcard else target).append(value)
+                    for kind in kinds:
+                        report["changed"][kind] = report["changed"].get(kind, 0) + 1
+        if domains:
+            rule["domain"] = domains
+        if suffixes:
+            rule["domain_suffix"] = suffixes
+        if not set(rule) - {"type", "invert"}:
+            report["removed_rules"] += 1
+            return None
+        return rule
+
+    normalized = [result for rule in rules if (result := normalize(rule)) is not None]
+    for rule in normalized:
+        classical_lines(rule)
+    return normalized, report
 
 
 def validate_native_snapshots(snapshots):
@@ -223,7 +293,6 @@ def build(source_dir, output, work_dir, sing_box, mihomo, commit, base_url, sour
     elif native_snapshots is not None or source_origin == "git_blob_verified":
         raise ValueError("native snapshots and verified cache require full mode")
     sets = sorted(full_catalog) if full_catalog is not None else json.loads((ROOT / "config/sets.json").read_text())
-    exclusion_policy = json.loads((ROOT / "config/exclusions.json").read_text()) if full_catalog is not None else {}
     tools = json.loads((ROOT / "config/tools.json").read_text())
     if source_origin not in ("local/unverified", "authenticated_download", "git_blob_verified"):
         raise ValueError("invalid source origin")
@@ -238,6 +307,7 @@ def build(source_dir, output, work_dir, sing_box, mihomo, commit, base_url, sour
     with tempfile.TemporaryDirectory(dir=work_dir, prefix="build-") as tmp:
         tmp = Path(tmp)
         stage = tmp / "output"
+        stage.mkdir()
         native_catalog = NativeCatalog(native_snapshots, mihomo, tmp) if full_catalog is not None else None
         if full_catalog is None:
             (stage / "rules").mkdir(parents=True)
@@ -253,12 +323,13 @@ def build(source_dir, output, work_dir, sing_box, mihomo, commit, base_url, sour
                                 "-o", str(decoded)], check=True, capture_output=True)
             except subprocess.CalledProcessError as exc:
                 if (full_catalog is None or not source.startswith("AdGuard/HostlistsRegistry/")
-                        or b"unable to decompile binary AdGuard rules to rule-set." not in exc.stderr):
+                        or not re.fullmatch(
+                            rb"(?:(?:FATAL|\x1b\[31mFATAL\x1b\[0m)\[[0-9]{4,}\] )?"
+                            rb"unable to decompile binary AdGuard rules to rule-set\.\n?", exc.stderr)):
                     raise
                 reason = "sing-box cannot decompile binary AdGuard rules"
                 item = {"source": source, "sha256": hashlib.sha256(raw).hexdigest(),
                         "git_blob": full_catalog[source][0], "reason": reason}
-                approved_exclusion(exclusion_policy, source, reason, item["git_blob"])
                 sources.append(item)
                 excluded.append(item)
                 continue
@@ -271,14 +342,16 @@ def build(source_dir, output, work_dir, sing_box, mihomo, commit, base_url, sour
             if identifier in providers:
                 raise ValueError("duplicate provider ID")
             rules = data["rules"]
+            normalization = None
             try:
-                unsupported = validate_full_rules(rules) if full_catalog is not None else None
+                if full_catalog is not None:
+                    rules, normalization = normalize_full_rules(rules)
             except ValueError as exc:
                 raise ValueError(f"{source}: {exc}") from exc
-            if unsupported:
+            if full_catalog is not None and not rules:
                 item = {"source": source, "sha256": hashlib.sha256(raw).hexdigest(),
-                         "git_blob": full_catalog[source][0], "reason": "invalid domain"}
-                approved_exclusion(exclusion_policy, source, item["reason"], item["git_blob"])
+                         "git_blob": full_catalog[source][0], "reason": "no rules after normalization",
+                         "normalization": normalization}
                 sources.append(item)
                 excluded.append(item)
                 continue
@@ -339,7 +412,9 @@ def build(source_dir, output, work_dir, sing_box, mihomo, commit, base_url, sour
                             "behavior": behavior, "format": providers[identifier]["format"]})
             if full_catalog is not None:
                 sources[-1].update({"git_blob": full_catalog[source][0],
-                                     "output": rel, "method": native_result["method"]})
+                                      "output": rel, "method": native_result["method"]})
+                if normalization["changed"] or normalization["dropped"]:
+                    sources[-1]["normalization"] = normalization
                 if native_result["method"] == "native_mrs":
                     sources[-1]["native"] = {key: native_result[key] for key in ("repo", "commit", "path", "input_sha256")}
                 else:
