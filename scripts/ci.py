@@ -45,7 +45,7 @@ def full_fingerprint(commit, native_snapshots, base_url):
         raise ValueError("invalid fingerprint inputs")
     paths = ("config/tools.json", "config/exclusions.json", "scripts/catalog.py", "scripts/build.py",
              "scripts/native.py", "scripts/ci.py", "scripts/fetch_tools.py", "scripts/integration_check.py",
-             "scripts/publish.py", ".github/workflows/build.yml", "README.md", "THIRD_PARTY.md", "GUIDE.md")
+             "scripts/publish.py", ".github/workflows/build.yml", "README.md", "GUIDE.md")
     fields = [b"full", commit.encode(), base_url.encode()]
     for repo, sha in sorted(native_snapshots.items()):
         fields.extend((repo.encode(), sha.encode()))
@@ -246,8 +246,10 @@ def validate_full(root, manifest, unstamped, expected_commit, expected_fingerpri
     if exclusions != manifest["excluded"]:
         raise ValueError("invalid exclusions")
     outputs = manifest["outputs"]
-    expected_outputs = {s["output"] for s in mapping.values()} | {"rule-providers.yaml", "README.md", "THIRD_PARTY.md"}
-    if not historical or (isinstance(outputs, dict) and "GUIDE.md" in outputs):
+    expected_outputs = {s["output"] for s in mapping.values()} | {"rule-providers.yaml", "README.md"}
+    if historical and isinstance(outputs, dict) and "THIRD_PARTY.md" in outputs:
+        expected_outputs.add("THIRD_PARTY.md")
+    if not historical or "THIRD_PARTY.md" not in expected_outputs or (isinstance(outputs, dict) and "GUIDE.md" in outputs):
         expected_outputs.add("GUIDE.md")
     if not isinstance(outputs, dict) or set(outputs) != expected_outputs:
         raise ValueError("invalid outputs")

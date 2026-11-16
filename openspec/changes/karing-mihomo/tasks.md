@@ -53,13 +53,13 @@ spec/quality PASS. RED/GREEN описан исполнителем; часть �
 ### Task 2: Автоматизация и README
 
 **Dependencies:** Task 1 прошла review. **Files:** `.github/workflows/build.yml`,
-`README.md`, `THIRD_PARTY.md`, `.gitignore`, `requirements.txt`.
+`README.md`, `.gitignore`, `requirements.txt`.
 **Interfaces:** потребляет CLI/выходы Task 1. Конкретные имена взять из отчёта
 Task 1, не заводить второй конвертер.
 
 - [x] Создать workflow с pinned actions/tools, отдельными правами build/publish,
   concurrency, одним commit вывода и закрытым по умолчанию license gate.
-- [x] Написать русский README и THIRD_PARTY с фактическими источниками,
+- [x] Написать русский README с фактическими источниками,
   командами, использованием, обновлением, откатом, About и ограничениями.
 - [x] Проверить unit/integration; независимый review.
    Task2b: 43 unit tests PASS; offline 46-provider integration PASS;
@@ -88,7 +88,7 @@ Task 1, не заводить второй конвертер.
 ### Task 4: Исключить профиль Remnawave
 
 **Files:** удалить `scripts/merge_profile.py`, `tests/test_profile.py`; обновить
-`README.md`, `THIRD_PARTY.md`, этот change.
+`README.md`, этот change.
 - [x] Удалить merger и его тесты; в остальных файлах не осталось ссылок на них.
 - [x] README и OpenSpec очищены от профиля Remnawave, личных маршрутов и клиентов.
 - [x] Unit tests, `ci.py validate --unstamped`, `openspec validate --all --strict`

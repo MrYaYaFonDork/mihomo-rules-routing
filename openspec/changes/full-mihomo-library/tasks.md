@@ -8,7 +8,7 @@
 ### Task 2: Проверка и публикация
 - [x] Проверять все providers offline частями с сохранением namespace guard.
 - [x] Обновить CI validation и orphan publication с force-with-lease и закрытым license gate.
-- [x] Обновить README и THIRD_PARTY.
+- [x] Обновить README.
 
 ### Task 3: Приёмка
 - [x] Выполнить все unit tests и строгую проверку OpenSpec.

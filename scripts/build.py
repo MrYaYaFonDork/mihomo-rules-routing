@@ -346,7 +346,7 @@ def build(source_dir, output, work_dir, sing_box, mihomo, commit, base_url, sour
                     sources[-1]["native_reason"] = native_result["reason"]
         (stage / "rule-providers.yaml").write_text(providers_yaml(providers))
         if full_catalog is not None:
-            for name in ("README.md", "THIRD_PARTY.md", "GUIDE.md"):
+            for name in ("README.md", "GUIDE.md"):
                 shutil.copyfile(ROOT / name, stage / name)
         hashes = {str(p.relative_to(stage)): hashlib.sha256(p.read_bytes()).hexdigest()
                   for p in sorted(stage.rglob("*")) if p.is_file()}

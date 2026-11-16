@@ -15,7 +15,7 @@
 - [d3ward/toolz](https://github.com/d3ward/toolz): `adblock_data.json` для `BanADCompany`.
 - [AdGuard HostlistsRegistry](https://adguardteam.github.io/HostlistsRegistry/assets/filters.json): каталог фильтров AdGuard.
 
-Готовые Mihomo MRS из [MetaCubeX/meta-rules-dat, ветка `meta`](https://github.com/MetaCubeX/meta-rules-dat/tree/meta) и [runetfreedom/russia-blocked-geoip](https://github.com/runetfreedom/russia-blocked-geoip/tree/release) (`release`) используются только при доказанном совпадении содержимого с преобразованным входом Karing. Инструменты сборки — [sing-box](https://github.com/SagerNet/sing-box) и [mihomo](https://github.com/MetaCubeX/mihomo); их версии и хеши указаны в [config/tools.json](config/tools.json). Сведения о правах и ограничениях — в [THIRD_PARTY.md](THIRD_PARTY.md).
+Готовые Mihomo MRS из [MetaCubeX/meta-rules-dat, ветка `meta`](https://github.com/MetaCubeX/meta-rules-dat/tree/meta) и [runetfreedom/russia-blocked-geoip](https://github.com/runetfreedom/russia-blocked-geoip/tree/release) (`release`) используются только при доказанном совпадении содержимого с преобразованным входом Karing. Инструменты сборки — [sing-box](https://github.com/SagerNet/sing-box) и [mihomo](https://github.com/MetaCubeX/mihomo); их версии и хеши указаны в [config/tools.json](config/tools.json).
 
 ## Быстрый старт
 
@@ -198,6 +198,16 @@ rules:
 ```
 
 Подробнее о подключении, проверке и устранении ошибок — [GUIDE.md](GUIDE.md).
+
+## Правовая информация
+
+Проект некоммерческий и создан исключительно для личного использования. Он не связан с авторами исходных наборов правил, не одобрен и не поддерживается ими.
+
+Автор проекта не претендует на какие-либо права, в том числе исключительные и авторские, на наборы правил, списки доменов и IP-адресов и другие данные третьих лиц, распространяемые в ветке `rules`. Все права на них принадлежат соответствующим правообладателям, перечисленным в разделе «Источники», и регулируются условиями их лицензий. Публикация в этом репозитории не означает предоставления каких-либо прав или лицензий на эти данные.
+
+Материалы предоставляются «как есть» (as is), без каких-либо гарантий, явных или подразумеваемых, включая гарантии полноты, точности, пригодности для определённой цели и отсутствия нарушений прав третьих лиц. Автор не несёт ответственности за любые убытки, прямые или косвенные, возникшие в связи с использованием или невозможностью использования материалов. Пользователь самостоятельно отвечает за соблюдение лицензий источников и применимого законодательства.
+
+Если вы правообладатель и считаете, что материалы размещены с нарушением ваших прав, создайте issue в этом репозитории: соответствующие данные будут удалены.
 
 ## Для разработчиков
 

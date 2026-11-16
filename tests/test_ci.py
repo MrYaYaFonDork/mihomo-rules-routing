@@ -358,6 +358,15 @@ class CiTests(unittest.TestCase):
             manifest["outputs"]["GUIDE.md"] = hashlib.sha256(b"GUIDE.md").hexdigest()
             (root / "manifest.json").write_text(json.dumps(manifest))
             ci.validate(root, historical=True)
+            with patch.object(ci, "load_exclusions", return_value={excluded["source"]: [excluded["reason"], excluded["git_blob"]]}), \
+                    patch.dict("os.environ", {"GH_TOKEN": "test"}), \
+                    patch.object(ci, "api", side_effect=lambda path, token: commit_object if "/commits/" in path else tree):
+                with self.assertRaisesRegex(ValueError, "invalid outputs"):
+                    ci.validate(root, expected_native_snapshots=manifest["native_snapshots"])
+            (root / "THIRD_PARTY.md").unlink()
+            del manifest["outputs"]["THIRD_PARTY.md"]
+            (root / "manifest.json").write_text(json.dumps(manifest))
+            ci.validate(root, historical=True)
             manifest["source_origin"] = "git_blob_verified"
             (root / "manifest.json").write_text(json.dumps(manifest))
             ci.validate(root, historical=True)
@@ -608,7 +617,7 @@ class CiTests(unittest.TestCase):
         self.assertEqual(len(uploads), 1)
         self.assertIn("LICENSING_PROVENANCE_APPROVED", uploads[0]["if"])
         self.assertIn("product/mihomo", uploads[0]["with"]["path"])
-        for name in ("rule-providers.yaml", "manifest.json", "README.md", "THIRD_PARTY.md", "GUIDE.md"):
+        for name in ("rule-providers.yaml", "manifest.json", "README.md", "GUIDE.md"):
             self.assertIn("product/" + name, uploads[0]["with"]["path"])
         steps = doc["jobs"]["build"]["steps"]
         build = next(step for step in steps if step.get("name") == "Build and validate offline")
@@ -646,7 +655,7 @@ class CiTests(unittest.TestCase):
             paths = ["config/tools.json", "config/exclusions.json", "scripts/catalog.py",
                      "scripts/build.py", "scripts/native.py", "scripts/ci.py",
                      "scripts/fetch_tools.py", "scripts/integration_check.py", "scripts/publish.py",
-                     ".github/workflows/build.yml", "README.md", "THIRD_PARTY.md", "GUIDE.md"]
+                     ".github/workflows/build.yml", "README.md", "GUIDE.md"]
             for name in paths:
                 file = root / name
                 file.parent.mkdir(parents=True, exist_ok=True)

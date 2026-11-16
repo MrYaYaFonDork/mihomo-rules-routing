@@ -19,7 +19,7 @@ def product(root, name):
     root.mkdir()
     files = {"mihomo/geosite/" + name + ".mrs": b"binary",
              "rule-providers.yaml": b"providers", "README.md": b"readme",
-             "THIRD_PARTY.md": b"licenses", "GUIDE.md": b"guide"}
+             "GUIDE.md": b"guide"}
     for path, content in files.items():
         file = root / path
         file.parent.mkdir(parents=True, exist_ok=True)
@@ -160,7 +160,7 @@ class PublishTests(unittest.TestCase):
                 (root / "manifest.json").write_text(json.dumps(manifest))
             elif defect == "symlink":
                 (root / "README.md").unlink()
-                (root / "README.md").symlink_to(root / "THIRD_PARTY.md")
+                (root / "README.md").symlink_to(root / "GUIDE.md")
             else:
                 (root / "unexpected").write_text("x")
             with self.subTest(defect=defect), self.assertRaises((ValueError, OSError)):
@@ -172,6 +172,45 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(git(self.remote, "rev-parse", "refs/heads/main"), self.main)
         self.assertNotEqual(subprocess.run(["git", "show-ref", "--verify", "--quiet", "refs/heads/rules"],
                                            cwd=self.remote).returncode, 0)
+
+    def test_rejects_missing_guide_without_publishing(self):
+        root = self.root / "missing-guide"
+        product(root, "A")
+        manifest = json.loads((root / "manifest.json").read_text())
+        (root / "GUIDE.md").unlink()
+        del manifest["outputs"]["GUIDE.md"]
+        (root / "manifest.json").write_text(json.dumps(manifest))
+        for exists in (False, True):
+            if exists:
+                git(self.remote, "update-ref", "refs/heads/rules", self.main)
+            with self.subTest(exists=exists):
+                with self.assertRaises(ValueError):
+                    send(root, str(self.remote), self.root)
+                result = subprocess.run(["git", "rev-parse", "--verify", "refs/heads/rules"],
+                                        cwd=self.remote, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0 if exists else 128)
+                if exists:
+                    self.assertEqual(result.stdout.strip(), self.main)
+
+    def test_rejects_extra_document_without_publishing(self):
+        root = self.root / "extra-document"
+        product(root, "A")
+        manifest = json.loads((root / "manifest.json").read_text())
+        content = b"legacy document"
+        (root / "EXTRA.md").write_bytes(content)
+        manifest["outputs"]["EXTRA.md"] = hashlib.sha256(content).hexdigest()
+        (root / "manifest.json").write_text(json.dumps(manifest))
+        for exists in (False, True):
+            if exists:
+                git(self.remote, "update-ref", "refs/heads/rules", self.main)
+            with self.subTest(exists=exists):
+                with self.assertRaises(ValueError):
+                    send(root, str(self.remote), self.root)
+                result = subprocess.run(["git", "rev-parse", "--verify", "refs/heads/rules"],
+                                        cwd=self.remote, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0 if exists else 128)
+                if exists:
+                    self.assertEqual(result.stdout.strip(), self.main)
 
     def test_rejects_replaced_manifest_and_corrupted_copy_before_push(self):
         src = self.root / "product"
