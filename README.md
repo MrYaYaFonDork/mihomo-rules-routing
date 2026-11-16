@@ -1,3 +1,5 @@
+English | [Русский](README.ru.md)
+
 # Mihomo rules library
 
 Individual rule-provider sets for Mihomo, built from a pinned snapshot of [Karing ruleset](https://github.com/KaringX/karing-ruleset). The catalog and provenance of the sets are described in `manifest.json`; ready-to-use definitions are in `rule-providers.yaml` on the `rules` branch.

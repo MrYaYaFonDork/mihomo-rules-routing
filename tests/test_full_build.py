@@ -50,7 +50,7 @@ class FullBuildTests(unittest.TestCase):
             (root / "config/tools.json").write_text(json.dumps({
                 "sing-box": {"version": "v", "binary_sha256": "x"},
                 "mihomo": {"version": "v", "binary_sha256": "x"}}))
-            for name in ("README.md", "GUIDE.md"):
+            for name in ("README.md", "README.ru.md", "GUIDE.md"):
                 (root / name).write_text(name)
             known = b"unable to decompile binary AdGuard rules to rule-set."
             cases = [("AdGuard/HostlistsRegistry/a.srs", known, True),
@@ -135,7 +135,7 @@ class FullBuildTests(unittest.TestCase):
             (root / "config/tools.json").write_text(json.dumps({
                 "sing-box": {"version": "v", "binary_sha256": "x"},
                 "mihomo": {"version": "v", "binary_sha256": "x"}}))
-            for name in ("README.md", "GUIDE.md"):
+            for name in ("README.md", "README.ru.md", "GUIDE.md"):
                 (root / name).write_text(name)
             (root / "a.srs").write_bytes(b"x")
             catalog = {"a.srs": (hashlib.sha1(b"blob 1\0x").hexdigest(), 1)}
@@ -154,6 +154,8 @@ class FullBuildTests(unittest.TestCase):
                 build(root, root / "out", root, root / "sing", root / "mihomo", "a"*40,
                       "https://example.test", full_catalog=catalog, native_snapshots=SNAPSHOTS)
             report = json.loads((root / "out/manifest.json").read_text())["sources"][0]["normalization"]
+            for name in ("README.md", "README.ru.md", "GUIDE.md"):
+                self.assertFalse((root / "out" / name).exists())
             self.assertEqual(report["dropped"], [{"field": "domain", "value": "bad,", "reason": "invalid domain"}])
             self.assertIn('"example.com"', payloads[0])
             self.assertIn('"+.xn--e1afmkfd.xn--p1ai"', payloads[0])
@@ -230,7 +232,7 @@ class FullBuildTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="full-test-") as tmp:
             root = Path(tmp)
             (root / "config").mkdir()
-            for name in ("README.md", "GUIDE.md"):
+            for name in ("README.md", "README.ru.md", "GUIDE.md"):
                 (root / name).write_text(name)
             (root / "config/tools.json").write_text(json.dumps({
                 "sing-box": {"version": "v", "binary_sha256": "x"},
@@ -389,7 +391,7 @@ class FullBuildTests(unittest.TestCase):
                 with self.subTest(count=count), self.assertRaises(ValueError):
                     extract_catalog(archive, {path: (sha, len(data))}, root)
 
-    def test_native_glue_manifest_docs_and_failure(self):
+    def test_native_glue_manifest_without_docs_and_failure(self):
         with tempfile.TemporaryDirectory(prefix="glue-") as tmp:
             root = Path(tmp)
             (root / "config").mkdir()
@@ -397,7 +399,7 @@ class FullBuildTests(unittest.TestCase):
                 "sing-box": {"version": "v", "binary_sha256": "x"},
                 "mihomo": {"version": "v", "binary_sha256": "x"}}))
             (root / "config/exclusions.json").write_text("{}")
-            for name in ("README.md", "GUIDE.md"):
+            for name in ("README.md", "README.ru.md", "GUIDE.md"):
                 (root / name).write_text(name)
             paths = ["geo/geosite/a.srs", "geo/geosite/b.srs", "geo/geosite/c.srs"]
             for path in paths:
@@ -438,8 +440,9 @@ class FullBuildTests(unittest.TestCase):
                 self.assertEqual((root / "out" / a["output"]).read_bytes(), b"native")
                 self.assertEqual(b["native_reason"], "not equivalent")
                 self.assertEqual(c["native_reason"], "classical behavior")
-                for name in ("README.md", "GUIDE.md"):
-                    self.assertEqual(manifest["outputs"][name], hashlib.sha256((root / name).read_bytes()).hexdigest())
+                for name in ("README.md", "README.ru.md", "GUIDE.md"):
+                    self.assertNotIn(name, manifest["outputs"])
+                    self.assertFalse((root / "out" / name).exists())
                 native.return_value.maybe_reuse.side_effect = RuntimeError("proof failed")
                 with self.assertRaisesRegex(RuntimeError, "proof failed"):
                     build(root, root / "failed", root, root / "sing", root / "mihomo", "a" * 40,

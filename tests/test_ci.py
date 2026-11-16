@@ -78,8 +78,6 @@ class CiTests(unittest.TestCase):
             (root / "rule-providers.yaml").write_text(providers_yaml({name: {
                 "type": "http", "behavior": "domain", "format": "mrs",
                 "path": "./mihomo/a.mrs", "url": "https://example.test/mihomo/a.mrs", "interval": 86400}}))
-            for name_doc in ("README.md", "GUIDE.md"):
-                (root / name_doc).write_text(name_doc)
             report = {"changed": {"lower": 1}, "dropped": [{"field": "domain", "value": "bad,", "reason": "invalid domain"}], "removed_rules": 0}
             source = {"source": "a.srs", "sha256": "1"*64, "git_blob": "2"*40,
                       "providers": [name], "count": 1, "behavior": "domain", "format": "mrs",
@@ -104,6 +102,14 @@ class CiTests(unittest.TestCase):
                  patch.object(ci, "api", side_effect=lambda path, token: commit_obj if "/commits/" in path else tree):
                 write()
                 ci.validate(root, expected_native_snapshots=snapshots)
+                (root / "README.md").write_text("README.md")
+                manifest["outputs"]["README.md"] = hashlib.sha256(b"README.md").hexdigest()
+                write()
+                with self.assertRaisesRegex(ValueError, "invalid outputs"):
+                    ci.validate(root, expected_native_snapshots=snapshots)
+                (root / "README.md").unlink()
+                del manifest["outputs"]["README.md"]
+                write()
                 for value, reason in (("EXAMPLE.COM.", "invalid domain"),
                                       ("*.example.com", "wildcard too broad"),
                                       ("bad,", "invalid idna")):
@@ -247,7 +253,7 @@ class CiTests(unittest.TestCase):
                     patch.object(ci, "download_published_archive", side_effect=archive), \
                     patch.object(ci, "full_fingerprint", return_value="b"*64), \
                     patch.object(ci, "validate", wraps=ci.validate) as validate:
-                self.assertFalse(ci.prepare("owner/repo", "token", root)["changed"])
+                self.assertTrue(ci.prepare("owner/repo", "token", root)["changed"])
                 self.assertTrue(validate.call_args.kwargs["historical"])
                 unsigned = dict(manifest)
                 unsigned.pop("ci_fingerprint")
@@ -285,7 +291,8 @@ class CiTests(unittest.TestCase):
 
     def test_prepare_full_pins_and_validates_one_archive_before_skip(self):
         snapshots = {"MetaCubeX/meta-rules-dat": "c"*40, "runetfreedom/russia-blocked-geoip": "d"*40}
-        state = {"branch": True, "truncated": False, "corrupt": False, "fingerprint": "b"*64}
+        state = {"branch": True, "truncated": False, "corrupt": False, "fingerprint": "b"*64,
+                 "outputs": {"rule-providers.yaml": "hash", "mihomo/a.mrs": "hash"}}
         contents = {"manifest.json": b'{"ci_fingerprint": "fixture"}', "rule-providers.yaml": b"providers"}
         def fake_api(path, token, missing=False):
             if path == "repos/KaringX/karing-ruleset/git/ref/heads/sing":
@@ -320,7 +327,7 @@ class CiTests(unittest.TestCase):
                 patch.object(ci, "full_fingerprint", return_value="b"*64), \
                 patch.object(ci, "validate", side_effect=lambda *a, **k: {
                     "excluded": [], "ci_fingerprint": state["fingerprint"], "upstream_commit": "a"*40,
-                    "native_snapshots": snapshots}):
+                     "native_snapshots": snapshots, "outputs": state["outputs"]}):
             state["branch"] = False
             result = ci.prepare("owner/repo", "token", tmp)
             self.assertTrue(result["changed"])
@@ -328,6 +335,9 @@ class CiTests(unittest.TestCase):
             download.assert_not_called()
             state["branch"] = True
             self.assertFalse(ci.prepare("owner/repo", "token", tmp)["changed"])
+            state["outputs"]["README.md"] = "hash"
+            self.assertTrue(ci.prepare("owner/repo", "token", tmp)["changed"])
+            del state["outputs"]["README.md"]
             state["fingerprint"] = "0"*64
             self.assertTrue(ci.prepare("owner/repo", "token", tmp)["changed"])
             state["truncated"] = True
@@ -341,6 +351,38 @@ class CiTests(unittest.TestCase):
             with patch.object(ci, "validate", side_effect=ValueError("invalid historical manifest")):
                 with self.assertRaisesRegex(ValueError, "invalid historical manifest"):
                     ci.prepare("owner/repo", "token", tmp)
+
+    def test_prepare_matching_fingerprint_with_documents_requires_rebuild(self):
+        snapshots = {"MetaCubeX/meta-rules-dat": "c"*40, "runetfreedom/russia-blocked-geoip": "d"*40}
+        data = b'{"ci_fingerprint": "fixture"}'
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode="w:gz") as tar:
+            info = tarfile.TarInfo("snapshot/manifest.json")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        def fake_api(path, token, missing=False):
+            if path.endswith("/git/ref/heads/sing"):
+                return {"object": {"sha": "a"*40}}
+            if path.endswith("/git/ref/heads/meta"):
+                return {"object": {"sha": "c"*40}}
+            if path.endswith("/git/ref/heads/release"):
+                return {"object": {"sha": "d"*40}}
+            if path.endswith("/branches/rules"):
+                return {"commit": {"sha": "e"*40}}
+            if "/git/commits/" in path:
+                return {"tree": {"sha": "f"*40}}
+            return {"sha": "f"*40, "truncated": False, "tree": [{
+                "path": "manifest.json", "type": "blob", "mode": "100644", "size": len(data),
+                "sha": hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()}]}
+        previous = {"excluded": [], "ci_fingerprint": "b"*64, "upstream_commit": "a"*40,
+                    "native_snapshots": snapshots,
+                    "outputs": {"rule-providers.yaml": "hash", "mihomo/a.mrs": "hash", "README.md": "hash"}}
+        with tempfile.TemporaryDirectory(prefix="ci-prepare-") as tmp, \
+                patch.object(ci, "api", side_effect=fake_api), \
+                patch.object(ci, "download_published_archive", return_value=stream.getvalue()), \
+                patch.object(ci, "full_fingerprint", return_value="b"*64), \
+                patch.object(ci, "validate", return_value=previous):
+            self.assertTrue(ci.prepare("owner/repo", "token", tmp)["changed"])
 
     def test_publish_validates_then_calls_orphan_helper_with_checked_manifest_hash(self):
         with tempfile.TemporaryDirectory(prefix="ci-publish-") as tmp:
@@ -436,6 +478,15 @@ class CiTests(unittest.TestCase):
             del manifest["outputs"]["THIRD_PARTY.md"]
             (root / "manifest.json").write_text(json.dumps(manifest))
             ci.validate(root, historical=True)
+            (root / "README.ru.md").write_text("README.ru.md")
+            manifest["outputs"]["README.ru.md"] = hashlib.sha256(b"README.ru.md").hexdigest()
+            (root / "manifest.json").write_text(json.dumps(manifest))
+            ci.validate(root, historical=True)
+            for name in ("README.md", "README.ru.md", "GUIDE.md"):
+                (root / name).unlink()
+                del manifest["outputs"][name]
+            (root / "manifest.json").write_text(json.dumps(manifest))
+            ci.validate(root, historical=True)
             manifest["source_origin"] = "git_blob_verified"
             (root / "manifest.json").write_text(json.dumps(manifest))
             ci.validate(root, historical=True)
@@ -495,10 +546,10 @@ class CiTests(unittest.TestCase):
                 native_manifest["source_origin"] = "git_blob_verified"
                 (root / "manifest.json").write_text(json.dumps(native_manifest))
                 ci.validate(root, expected_native_snapshots=snapshots)
-                (root / "README.md").write_text("modified")
+                (root / path).write_text("modified")
                 with self.assertRaisesRegex(ValueError, "output hash"):
                     ci.validate(root, expected_native_snapshots=snapshots)
-                (root / "README.md").write_text("README.md")
+                (root / path).write_bytes(b"synthetic")
                 native_manifest["source_origin"] = "authenticated_download"
                 (root / "manifest.json").write_text(json.dumps(native_manifest))
                 with self.assertRaisesRegex(ValueError, "native snapshots"):
@@ -679,8 +730,10 @@ class CiTests(unittest.TestCase):
         self.assertEqual(len(uploads), 1)
         self.assertIn("LICENSING_PROVENANCE_APPROVED", uploads[0]["if"])
         self.assertIn("product/mihomo", uploads[0]["with"]["path"])
-        for name in ("rule-providers.yaml", "manifest.json", "README.md", "GUIDE.md"):
+        for name in ("rule-providers.yaml", "manifest.json"):
             self.assertIn("product/" + name, uploads[0]["with"]["path"])
+        for name in ("README.md", "README.ru.md", "GUIDE.md"):
+            self.assertNotIn("product/" + name, uploads[0]["with"]["path"])
         steps = doc["jobs"]["build"]["steps"]
         build = next(step for step in steps if step.get("name") == "Build and validate offline")
         self.assertIn("--full", build["run"])
@@ -711,13 +764,28 @@ class CiTests(unittest.TestCase):
             self.assertNotEqual(first, ci.fingerprint("a" * 40, "https://example.test", [path]))
             self.assertNotEqual(first, ci.fingerprint("a" * 40, "https://other.example.test", [path]))
 
+    def test_readme_changes_do_not_change_full_fingerprint(self):
+        with tempfile.TemporaryDirectory(prefix="ci-fingerprint-") as tmp:
+            root = Path(tmp)
+            for name in ("config/tools.json", "scripts/catalog.py", "scripts/build.py", "scripts/native.py",
+                         "scripts/ci.py", "scripts/fetch_tools.py", "scripts/integration_check.py",
+                         "scripts/publish.py", ".github/workflows/build.yml", "README.md", "README.ru.md", "GUIDE.md"):
+                file = root / name
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text(name)
+            snapshots = {"MetaCubeX/meta-rules-dat": "c"*40, "runetfreedom/russia-blocked-geoip": "d"*40}
+            with patch.object(ci, "ROOT", root):
+                first = ci.full_fingerprint("a"*40, snapshots, "https://example.test")
+                (root / "README.md").write_text("changed")
+                self.assertEqual(first, ci.full_fingerprint("a"*40, snapshots, "https://example.test"))
+
     def test_full_fingerprint_covers_all_inputs_and_requires_files(self):
         with tempfile.TemporaryDirectory(prefix="ci-fingerprint-") as tmp:
             root = Path(tmp)
             paths = ["config/tools.json", "scripts/catalog.py",
                      "scripts/build.py", "scripts/native.py", "scripts/ci.py",
                      "scripts/fetch_tools.py", "scripts/integration_check.py", "scripts/publish.py",
-                     ".github/workflows/build.yml", "README.md", "GUIDE.md"]
+                     ".github/workflows/build.yml"]
             for name in paths:
                 file = root / name
                 file.parent.mkdir(parents=True, exist_ok=True)

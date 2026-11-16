@@ -18,8 +18,7 @@ def git(cwd, *args):
 def product(root, name):
     root.mkdir()
     files = {"mihomo/geosite/" + name + ".mrs": b"binary",
-             "rule-providers.yaml": b"providers", "README.md": b"readme",
-             "GUIDE.md": b"guide"}
+             "rule-providers.yaml": b"providers"}
     for path, content in files.items():
         file = root / path
         file.parent.mkdir(parents=True, exist_ok=True)
@@ -154,13 +153,13 @@ class PublishTests(unittest.TestCase):
             product(root, "A")
             manifest = json.loads((root / "manifest.json").read_text())
             if defect == "hash":
-                (root / "README.md").write_text("tampered")
+                (root / "rule-providers.yaml").write_text("tampered")
             elif defect == "path":
                 manifest["outputs"]["../escape"] = "0" * 64
                 (root / "manifest.json").write_text(json.dumps(manifest))
             elif defect == "symlink":
-                (root / "README.md").unlink()
-                (root / "README.md").symlink_to(root / "GUIDE.md")
+                (root / "rule-providers.yaml").unlink()
+                (root / "rule-providers.yaml").symlink_to(root / "manifest.json")
             else:
                 (root / "unexpected").write_text("x")
             with self.subTest(defect=defect), self.assertRaises((ValueError, OSError)):
@@ -173,12 +172,12 @@ class PublishTests(unittest.TestCase):
         self.assertNotEqual(subprocess.run(["git", "show-ref", "--verify", "--quiet", "refs/heads/rules"],
                                            cwd=self.remote).returncode, 0)
 
-    def test_rejects_missing_guide_without_publishing(self):
-        root = self.root / "missing-guide"
+    def test_rejects_missing_providers_without_publishing(self):
+        root = self.root / "missing-providers"
         product(root, "A")
         manifest = json.loads((root / "manifest.json").read_text())
-        (root / "GUIDE.md").unlink()
-        del manifest["outputs"]["GUIDE.md"]
+        (root / "rule-providers.yaml").unlink()
+        del manifest["outputs"]["rule-providers.yaml"]
         (root / "manifest.json").write_text(json.dumps(manifest))
         for exists in (False, True):
             if exists:
@@ -197,8 +196,8 @@ class PublishTests(unittest.TestCase):
         product(root, "A")
         manifest = json.loads((root / "manifest.json").read_text())
         content = b"legacy document"
-        (root / "EXTRA.md").write_bytes(content)
-        manifest["outputs"]["EXTRA.md"] = hashlib.sha256(content).hexdigest()
+        (root / "README.md").write_bytes(content)
+        manifest["outputs"]["README.md"] = hashlib.sha256(content).hexdigest()
         (root / "manifest.json").write_text(json.dumps(manifest))
         for exists in (False, True):
             if exists:
@@ -219,7 +218,7 @@ class PublishTests(unittest.TestCase):
             publish_snapshot(src, str(self.remote), self.root, expected_manifest_sha256="0"*64)
         write = Path.write_bytes
         def corrupt(path, content):
-            if path.name == "README.md" and path.parent.name.startswith("publish-"):
+            if path.name == "rule-providers.yaml" and path.parent.name.startswith("publish-"):
                 content = b"corrupt"
             return write(path, content)
         with patch.object(Path, "write_bytes", corrupt):

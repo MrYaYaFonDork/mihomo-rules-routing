@@ -47,7 +47,7 @@ def full_fingerprint(commit, native_snapshots, base_url):
         raise ValueError("invalid fingerprint inputs")
     paths = ("config/tools.json", "scripts/catalog.py", "scripts/build.py",
              "scripts/native.py", "scripts/ci.py", "scripts/fetch_tools.py", "scripts/integration_check.py",
-             "scripts/publish.py", ".github/workflows/build.yml", "README.md", "GUIDE.md")
+             "scripts/publish.py", ".github/workflows/build.yml")
     fields = [b"full", commit.encode(), base_url.encode()]
     for repo, sha in sorted(native_snapshots.items()):
         fields.extend((repo.encode(), sha.encode()))
@@ -273,11 +273,14 @@ def validate_full(root, manifest, unstamped, expected_commit, expected_fingerpri
     if exclusions != manifest["excluded"]:
         raise ValueError("invalid exclusions")
     outputs = manifest["outputs"]
-    expected_outputs = {s["output"] for s in mapping.values()} | {"rule-providers.yaml", "README.md"}
-    if historical and isinstance(outputs, dict) and "THIRD_PARTY.md" in outputs:
-        expected_outputs.add("THIRD_PARTY.md")
-    if not historical or "THIRD_PARTY.md" not in expected_outputs or (isinstance(outputs, dict) and "GUIDE.md" in outputs):
-        expected_outputs.add("GUIDE.md")
+    expected_outputs = {s["output"] for s in mapping.values()} | {"rule-providers.yaml"}
+    if historical and isinstance(outputs, dict):
+        docs = set(outputs) - expected_outputs
+        if docs in ({"README.md", "THIRD_PARTY.md"},
+                    {"README.md", "THIRD_PARTY.md", "GUIDE.md"},
+                    {"README.md", "GUIDE.md"},
+                    {"README.md", "README.ru.md", "GUIDE.md"}):
+            expected_outputs |= docs
     if not isinstance(outputs, dict) or set(outputs) != expected_outputs:
         raise ValueError("invalid outputs")
     for source in mapping.values():
@@ -438,9 +441,11 @@ def prepare(repo, token, scratch):
     return {"commit": commit, "base_url": base, "fingerprint": value,
             "native_snapshots": json.dumps(snapshots, sort_keys=True, separators=(",", ":")),
             "changed": previous is None or "excluded" not in previous
-                       or "ci_fingerprint" not in previous or previous["ci_fingerprint"] != value
-                       or previous["upstream_commit"] != commit
-                       or previous["native_snapshots"] != snapshots}
+                        or "ci_fingerprint" not in previous or previous["ci_fingerprint"] != value
+                        or previous["upstream_commit"] != commit
+                        or previous["native_snapshots"] != snapshots
+                        or any(path != "rule-providers.yaml" and not path.startswith("mihomo/")
+                               for path in previous["outputs"])}
 
 
 def publish(product, checkout, commit, fingerprint_value, expected_native_snapshots=None):

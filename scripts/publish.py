@@ -35,7 +35,7 @@ def publish_snapshot(product, remote, work_dir, *, expected_manifest_sha256):
         raise ValueError("manifest hash mismatch")
     manifest = json.loads(manifest_bytes)
     outputs = manifest.get("outputs")
-    required = {"rule-providers.yaml", "README.md", "GUIDE.md"}
+    required = {"rule-providers.yaml"}
     if not isinstance(outputs, dict) or not required <= outputs.keys():
         raise ValueError("missing product outputs")
     for path, digest in outputs.items():

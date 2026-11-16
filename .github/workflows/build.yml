@@ -70,8 +70,6 @@ jobs:
             /tmp/opencode/mihomo-rules-routing/product/mihomo
             /tmp/opencode/mihomo-rules-routing/product/rule-providers.yaml
             /tmp/opencode/mihomo-rules-routing/product/manifest.json
-            /tmp/opencode/mihomo-rules-routing/product/README.md
-            /tmp/opencode/mihomo-rules-routing/product/GUIDE.md
           if-no-files-found: error
           retention-days: 1
   publish:
