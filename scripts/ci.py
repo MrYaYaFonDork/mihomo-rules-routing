@@ -25,6 +25,7 @@ except ModuleNotFoundError:
     from publish import publish_snapshot
 
 ROOT = Path(__file__).resolve().parent.parent
+MAX_PUBLISHED_FILE_SIZE = 100 * 1024 * 1024
 
 
 def fingerprint(commit, base_url, paths):
@@ -396,7 +397,7 @@ def prepare(repo, token, scratch):
                 dirs.add(name)
             elif (entry.get("type") == "blob" and entry.get("mode") == "100644"
                   and isinstance(entry.get("sha"), str) and re.fullmatch(r"[0-9a-f]{40}", entry["sha"])
-                  and type(entry.get("size")) is int and 0 <= entry["size"] <= 20 * 1024 * 1024):
+                  and type(entry.get("size")) is int and 0 <= entry["size"] <= MAX_PUBLISHED_FILE_SIZE):
                 files[name] = (entry["sha"], entry["size"])
             else:
                 raise ValueError("invalid tree entry")

@@ -292,7 +292,7 @@ class CiTests(unittest.TestCase):
     def test_prepare_full_pins_and_validates_one_archive_before_skip(self):
         snapshots = {"MetaCubeX/meta-rules-dat": "c"*40, "runetfreedom/russia-blocked-geoip": "d"*40}
         state = {"branch": True, "truncated": False, "corrupt": False, "fingerprint": "b"*64,
-                 "outputs": {"rule-providers.yaml": "hash", "mihomo/a.mrs": "hash"}}
+                 "outputs": {"rule-providers.yaml": "hash", "mihomo/a.mrs": "hash"}, "large_size": None}
         contents = {"manifest.json": b'{"ci_fingerprint": "fixture"}', "rule-providers.yaml": b"providers"}
         def fake_api(path, token, missing=False):
             if path == "repos/KaringX/karing-ruleset/git/ref/heads/sing":
@@ -309,7 +309,10 @@ class CiTests(unittest.TestCase):
                 return {"sha": "f"*40, "truncated": state["truncated"], "tree": [
                     {"path": name, "type": "blob", "mode": "100644", "size": len(data),
                      "sha": hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()}
-                    for name, data in contents.items()]}
+                    for name, data in contents.items()] + ([
+                        {"path": "large.yaml", "type": "blob", "mode": "100644",
+                         "size": state["large_size"], "sha": "1"*40}
+                    ] if state["large_size"] is not None else [])}
             return {}
         def archive(repo, sha, token):
             self.assertEqual(sha, "e"*40)
@@ -335,6 +338,14 @@ class CiTests(unittest.TestCase):
             download.assert_not_called()
             state["branch"] = True
             self.assertFalse(ci.prepare("owner/repo", "token", tmp)["changed"])
+            state["large_size"] = 45489183
+            with patch.object(ci, "download_published_archive", side_effect=ValueError("archive reached")):
+                with self.assertRaisesRegex(ValueError, "archive reached"):
+                    ci.prepare("owner/repo", "token", tmp)
+            state["large_size"] = 100 * 1024 * 1024 + 1
+            with self.assertRaisesRegex(ValueError, "invalid tree entry"):
+                ci.prepare("owner/repo", "token", tmp)
+            state["large_size"] = None
             state["outputs"]["README.md"] = "hash"
             self.assertTrue(ci.prepare("owner/repo", "token", tmp)["changed"])
             del state["outputs"]["README.md"]
