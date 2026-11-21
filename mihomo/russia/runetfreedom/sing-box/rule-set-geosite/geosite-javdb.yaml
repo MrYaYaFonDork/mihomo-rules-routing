@@ -1,0 +1,6 @@
+payload:
+  - "DOMAIN-REGEX,(^|\\.)javdb[0-9]+\\.com$"
+  - "DOMAIN-SUFFIX,jav.app"
+  - "DOMAIN-SUFFIX,javdb.com"
+  - "DOMAIN-SUFFIX,jdbimgs.com"
+  - "DOMAIN-SUFFIX,jdbstatic.com"
